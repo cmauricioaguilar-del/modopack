@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
 from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo
+from github_loader import EN_RAILWAY, carpetas_railway
 
 st.set_page_config(
     page_title="Control de Gestión",
@@ -25,31 +26,41 @@ COLORES = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
 with st.sidebar:
     st.title("⚙️ Configuración")
 
-    with st.expander("📁 Carpetas de datos", expanded=False):
-        carpeta_ventas_2025 = st.text_input(
-            "Carpeta Ventas 2025",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2025\VENTAS 2025",
-        )
-        carpeta_ventas_2026 = st.text_input(
-            "Carpeta Ventas 2026",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO VENTAS",
-        )
-        carpeta_compras_2025 = st.text_input(
-            "Carpeta Compras 2025",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2025\COMPRAS 2025",
-        )
-        carpeta_compras_2026 = st.text_input(
-            "Carpeta Compras 2026",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO COMPRA",
-        )
-        carpeta_rrhh_2025 = st.text_input(
-            "Carpeta RRHH 2025",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2025\REMUNERACIONES 2025",
-        )
-        carpeta_rrhh_2026 = st.text_input(
-            "Carpeta RRHH 2026",
-            value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO REMUNERACIONES",
-        )
+    if EN_RAILWAY:
+        st.info("📡 Leyendo datos desde GitHub")
+        _c = carpetas_railway()
+        carpeta_ventas_2025  = _c["ventas_2025"]
+        carpeta_ventas_2026  = _c["ventas_2026"]
+        carpeta_compras_2025 = _c["compras_2025"]
+        carpeta_compras_2026 = _c["compras_2026"]
+        carpeta_rrhh_2025    = _c["rrhh_2025"]
+        carpeta_rrhh_2026    = _c["rrhh_2026"]
+    else:
+        with st.expander("📁 Carpetas de datos", expanded=False):
+            carpeta_ventas_2025 = st.text_input(
+                "Carpeta Ventas 2025",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2025\VENTAS 2025",
+            )
+            carpeta_ventas_2026 = st.text_input(
+                "Carpeta Ventas 2026",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO VENTAS",
+            )
+            carpeta_compras_2025 = st.text_input(
+                "Carpeta Compras 2025",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2025\COMPRAS 2025",
+            )
+            carpeta_compras_2026 = st.text_input(
+                "Carpeta Compras 2026",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO COMPRA",
+            )
+            carpeta_rrhh_2025 = st.text_input(
+                "Carpeta RRHH 2025",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2025\REMUNERACIONES 2025",
+            )
+            carpeta_rrhh_2026 = st.text_input(
+                "Carpeta RRHH 2026",
+                value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO REMUNERACIONES",
+            )
 
     if st.button("🔄 Recargar datos", use_container_width=True):
         st.cache_data.clear()

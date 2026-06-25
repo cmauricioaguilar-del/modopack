@@ -1,40 +1,64 @@
-"""Lee archivos CSV/Excel desde el repo privado modopack-datos en GitHub."""
+"""
+Descarga archivos desde modopack-datos en GitHub a carpetas temporales.
+Se activa solo cuando la app corre en Railway (variable RAILWAY_ENVIRONMENT presente).
+"""
 import io
 import os
+import tempfile
 import requests
+from pathlib import Path
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = "cmauricioaguilar-del/modopack-datos"
 BRANCH = "main"
-BASE_URL = f"https://api.github.com/repos/{REPO}/contents"
+RAW_BASE = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}"
+API_BASE = f"https://api.github.com/repos/{REPO}/contents"
+
+EN_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
 
 
 def _headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3.raw"}
+    return {"Authorization": f"token {GITHUB_TOKEN}"}
 
 
-def listar_archivos(carpeta_repo: str) -> list[str]:
-    """Retorna lista de paths de archivos en una carpeta del repo."""
-    url = f"{BASE_URL}/{carpeta_repo}?ref={BRANCH}"
-    r = requests.get(url, headers=_headers(), timeout=30)
+def _listar(carpeta: str) -> list[dict]:
+    r = requests.get(f"{API_BASE}/{carpeta}?ref={BRANCH}", headers=_headers(), timeout=30)
     if r.status_code != 200:
         return []
-    return [f["path"] for f in r.json() if f["type"] == "file"]
+    return [f for f in r.json() if isinstance(f, dict) and f.get("type") == "file"]
 
 
-def descargar(path_repo: str) -> bytes:
-    """Descarga el contenido raw de un archivo del repo."""
-    url = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/{path_repo}"
-    r = requests.get(url, headers=_headers(), timeout=30)
-    r.raise_for_status()
-    return r.content
+def _descargar_carpeta(carpeta_repo: str, destino: Path):
+    """Descarga todos los archivos de una carpeta del repo a un directorio local."""
+    destino.mkdir(parents=True, exist_ok=True)
+    archivos = _listar(carpeta_repo)
+    for f in archivos:
+        url = f"{RAW_BASE}/{f['path']}"
+        r = requests.get(url, headers=_headers(), timeout=60)
+        if r.status_code == 200:
+            (destino / f["name"]).write_bytes(r.content)
 
 
-def csv_bytes_a_df(contenido: bytes, **kwargs):
-    import pandas as pd
-    return pd.read_csv(io.BytesIO(contenido), **kwargs)
+_cache_dirs: dict[str, str] = {}
 
 
-def excel_bytes_a_df(contenido: bytes, **kwargs):
-    import pandas as pd
-    return pd.read_excel(io.BytesIO(contenido), **kwargs)
+def obtener_carpeta(carpeta_repo: str) -> str:
+    """Retorna path local con los archivos descargados (con cache en memoria)."""
+    if carpeta_repo in _cache_dirs:
+        return _cache_dirs[carpeta_repo]
+    tmp = Path(tempfile.mkdtemp())
+    _descargar_carpeta(carpeta_repo, tmp)
+    _cache_dirs[carpeta_repo] = str(tmp)
+    return str(tmp)
+
+
+def carpetas_railway() -> dict:
+    """Retorna dict con todas las carpetas descargadas desde GitHub."""
+    return {
+        "ventas_2025":  obtener_carpeta("ventas/2025"),
+        "ventas_2026":  obtener_carpeta("ventas/2026"),
+        "compras_2025": obtener_carpeta("compras/2025"),
+        "compras_2026": obtener_carpeta("compras/2026"),
+        "rrhh_2025":    obtener_carpeta("rrhh/2025"),
+        "rrhh_2026":    obtener_carpeta("rrhh/2026"),
+    }
