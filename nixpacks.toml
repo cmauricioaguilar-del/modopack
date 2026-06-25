@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["python312", "gcc"]
+
+[start]
+cmd = "streamlit run app/main.py --server.port $PORT --server.address 0.0.0.0"
