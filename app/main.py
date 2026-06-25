@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
 from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo
-from github_loader import EN_RAILWAY, carpetas_railway
+from github_loader import EN_RAILWAY, carpetas_railway, subir_archivo
 
 st.set_page_config(
     page_title="Control de Gestión",
@@ -168,6 +168,30 @@ with st.sidebar:
     if st.button("🔄 Recargar datos", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
+    # Uploader — solo admin en Railway
+    if EN_RAILWAY and st.session_state.get("autenticado"):
+        st.divider()
+        with st.expander("📤 Subir archivos nuevos", expanded=False):
+            archivos = st.file_uploader(
+                "Selecciona uno o más archivos SII",
+                accept_multiple_files=True,
+                type=["csv", "xlsx"],
+                key="uploader",
+            )
+            if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
+                resultados = []
+                for f in archivos:
+                    ok, msg = subir_archivo(f.name, f.read())
+                    resultados.append((ok, msg))
+                for ok, msg in resultados:
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                if any(ok for ok, _ in resultados):
+                    st.cache_data.clear()
+                    st.rerun()
 
     st.divider()
     umbral = st.slider("Umbral Pareto (%)", 50, 95, 80, 5) / 100

@@ -39,6 +39,55 @@ def _descargar_carpeta(carpeta_repo: str, destino: Path):
             (destino / f["name"]).write_bytes(r.content)
 
 
+def detectar_destino(nombre: str) -> str | None:
+    """Detecta la carpeta destino en el repo según el nombre del archivo."""
+    n = nombre.upper()
+    if "RCV_VENTA_" in n and n.endswith(".CSV"):
+        anio = nombre[-10:-4][:4]
+        return f"ventas/{anio}"
+    if "RCV_RESUMEN_VENTA_" in n and n.endswith(".CSV"):
+        anio = nombre[-10:-4][:4]
+        return f"ventas/{anio}"
+    if "RCV_COMPRA_REGISTRO_" in n and n.endswith(".CSV"):
+        anio = nombre[-10:-4][:4]
+        return f"compras/{anio}"
+    if n.endswith(".XLSX"):
+        import re
+        m = re.search(r"(20\d{2})", nombre)
+        anio = m.group(1) if m else "2026"
+        return f"rrhh/{anio}"
+    return None
+
+
+def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
+    """Sube o reemplaza un archivo en modopack-datos. Retorna (ok, mensaje)."""
+    carpeta = detectar_destino(nombre)
+    if not carpeta:
+        return False, f"No se pudo detectar el tipo de archivo: {nombre}"
+
+    path_repo = f"{carpeta}/{nombre}"
+    url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
+
+    # Obtener SHA si el archivo ya existe (para actualizarlo)
+    r = requests.get(url, headers=_headers(), timeout=15)
+    sha = r.json().get("sha") if r.status_code == 200 else None
+
+    import base64 as _b64
+    payload = {
+        "message": f"update {nombre}",
+        "content": _b64.b64encode(contenido_bytes).decode(),
+        "branch": BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    r = requests.put(url, headers=_headers(), json=payload, timeout=30)
+    if r.status_code in (200, 201):
+        accion = "actualizado" if sha else "agregado"
+        return True, f"✅ {nombre} {accion} en `{carpeta}/`"
+    return False, f"❌ Error subiendo {nombre}: {r.json().get('message','')}"
+
+
 _cache_dirs: dict[str, str] = {}
 
 
