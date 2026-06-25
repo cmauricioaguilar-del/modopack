@@ -29,54 +29,70 @@ if not st.session_state.autenticado:
 
     st.markdown(f"""
     <style>
-    [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
+    /* Ocultar chrome de Streamlit */
+    [data-testid="stHeader"], [data-testid="stToolbar"],
+    [data-testid="stDecoration"], #MainMenu {{ display:none !important; }}
+
+    /* Fondo blanco total */
+    html, body, [data-testid="stAppViewContainer"],
+    [data-testid="stApp"], [data-testid="stMain"] {{
         background: #ffffff !important;
     }}
-    [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {{
-        display: none !important;
+    section[data-testid="stMain"] > div:first-child {{
+        padding-top: 0 !important;
     }}
-    section[data-testid="stMain"] > div {{ padding-top: 0 !important; }}
-    .login-wrap {{
+
+    /* Título fijo arriba-izquierda */
+    .titulo-header {{
+        position: fixed;
+        top: 18px; left: 28px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 2.5px;
+        text-transform: uppercase;
+        color: #1a6b8a;
+        z-index: 9999;
+    }}
+
+    /* Centrado vertical del contenido */
+    .login-center {{
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-        background: #ffffff;
-        padding: 40px 20px;
+        padding-top: 6vh;
     }}
-    .login-title {{
-        font-size: 13px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: #1a6b8a;
-        font-weight: 700;
-        margin-bottom: 6px;
-        text-align: left;
-        width: 100%;
-        max-width: 400px;
+
+    /* Inputs más grandes y mobile-friendly */
+    input[type="text"], input[type="password"] {{
+        font-size: 17px !important;
+        padding: 12px 16px !important;
+        height: auto !important;
     }}
-    .login-subtitle {{
-        font-size: 32px;
-        font-weight: 700;
-        color: #1a3a4a;
-        margin-bottom: 32px;
-        text-align: left;
-        width: 100%;
-        max-width: 400px;
-        line-height: 1.2;
+    label, [data-testid="stFormLabel"] p {{
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        color: #1a3a4a !important;
     }}
-    .login-footer {{
-        margin-top: 40px;
-        font-size: 12px;
-        color: #aab0bb;
-        text-align: center;
+    [data-testid="stFormSubmitButton"] button {{
+        font-size: 17px !important;
+        font-weight: 700 !important;
+        background: #1a6b8a !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 14px !important;
+        margin-top: 8px;
     }}
     </style>
-    <div class="login-wrap">
-        <img src="{logo_src}" style="width:320px;margin-bottom:36px;">
-        <div class="login-title">Control de Gestión</div>
-        <div class="login-subtitle">Bienvenido</div>
+
+    <div class="titulo-header">Control de Gestión</div>
+
+    <div class="login-center">
+        <img src="{logo_src}"
+             style="width:min(340px,80vw); margin-bottom:32px;">
+        <p style="font-size:22px;font-weight:700;color:#1a3a4a;
+                  margin-bottom:24px;letter-spacing:0.5px;">
+            Bienvenido
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -93,7 +109,10 @@ if not st.session_state.autenticado:
             else:
                 st.error("Usuario o contraseña incorrectos")
 
-    st.markdown('<p class="login-footer">© 2026 Modopack · Soluciones en Aislación Térmica</p>', unsafe_allow_html=True)
+    st.markdown("""
+    <p style="text-align:center;color:#aab0bb;font-size:12px;margin-top:32px;">
+        © 2026 Modopack · Soluciones en Aislación Térmica
+    </p>""", unsafe_allow_html=True)
     st.stop()
 
 st.markdown("""
