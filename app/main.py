@@ -12,6 +12,24 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Login ─────────────────────────────────────────────────────────────────────
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+if not st.session_state.autenticado:
+    st.title("🔒 Control de Gestión")
+    with st.form("login"):
+        usuario = st.text_input("Usuario")
+        clave   = st.text_input("Contraseña", type="password")
+        ok      = st.form_submit_button("Ingresar")
+    if ok:
+        if usuario == "admin" and clave == "modopack2026":
+            st.session_state.autenticado = True
+            st.rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos")
+    st.stop()
+
 st.markdown("""
 <style>
 [data-testid="stMetric"] { background:#f0f2f6; border-radius:8px; padding:12px; }
