@@ -18,47 +18,65 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state.autenticado:
     import base64, os
-    st.markdown("""
-    <style>
-    [data-testid="stAppViewContainer"] { background: #f4f6f9; }
-    [data-testid="stHeader"] { display: none; }
-    .login-box {
-        background: white;
-        border-radius: 12px;
-        padding: 48px 40px 36px 40px;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-        max-width: 420px;
-        margin: 60px auto 0 auto;
-    }
-    .login-divider {
-        border: none; border-top: 1px solid #e5e8ef;
-        margin: 24px 0 20px 0;
-    }
-    .login-footer {
-        text-align: center;
-        color: #aab0bb;
-        font-size: 12px;
-        margin-top: 28px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
-    # Cargar logo
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
     if os.path.exists(logo_path):
         with open(logo_path, "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode()
-        logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:100%;max-width:280px;display:block;margin:0 auto 8px auto;">'
+        logo_src = f"data:image/png;base64,{logo_b64}"
     else:
-        logo_html = '<h2 style="text-align:center;color:#1a5276;">MODOPACK</h2>'
+        logo_src = ""
 
     st.markdown(f"""
-    <div class="login-box">
-        {logo_html}
-        <p style="text-align:center;color:#7f8c9a;font-size:13px;margin-bottom:4px;">
-            Control de Gestión
-        </p>
-        <hr class="login-divider">
+    <style>
+    [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
+        background: #ffffff !important;
+    }}
+    [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {{
+        display: none !important;
+    }}
+    section[data-testid="stMain"] > div {{ padding-top: 0 !important; }}
+    .login-wrap {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: #ffffff;
+        padding: 40px 20px;
+    }}
+    .login-title {{
+        font-size: 13px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #1a6b8a;
+        font-weight: 700;
+        margin-bottom: 6px;
+        text-align: left;
+        width: 100%;
+        max-width: 400px;
+    }}
+    .login-subtitle {{
+        font-size: 32px;
+        font-weight: 700;
+        color: #1a3a4a;
+        margin-bottom: 32px;
+        text-align: left;
+        width: 100%;
+        max-width: 400px;
+        line-height: 1.2;
+    }}
+    .login-footer {{
+        margin-top: 40px;
+        font-size: 12px;
+        color: #aab0bb;
+        text-align: center;
+    }}
+    </style>
+    <div class="login-wrap">
+        <img src="{logo_src}" style="width:320px;margin-bottom:36px;">
+        <div class="login-title">Control de Gestión</div>
+        <div class="login-subtitle">Bienvenido</div>
     </div>
     """, unsafe_allow_html=True)
 
