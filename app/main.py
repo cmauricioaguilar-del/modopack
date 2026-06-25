@@ -17,17 +17,65 @@ if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔒 Control de Gestión")
-    with st.form("login"):
-        usuario = st.text_input("Usuario")
-        clave   = st.text_input("Contraseña", type="password")
-        ok      = st.form_submit_button("Ingresar")
-    if ok:
-        if usuario == "admin" and clave == "modopack2026":
-            st.session_state.autenticado = True
-            st.rerun()
-        else:
-            st.error("Usuario o contraseña incorrectos")
+    import base64, os
+    st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] { background: #f4f6f9; }
+    [data-testid="stHeader"] { display: none; }
+    .login-box {
+        background: white;
+        border-radius: 12px;
+        padding: 48px 40px 36px 40px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+        max-width: 420px;
+        margin: 60px auto 0 auto;
+    }
+    .login-divider {
+        border: none; border-top: 1px solid #e5e8ef;
+        margin: 24px 0 20px 0;
+    }
+    .login-footer {
+        text-align: center;
+        color: #aab0bb;
+        font-size: 12px;
+        margin-top: 28px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Cargar logo
+    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+        logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:100%;max-width:280px;display:block;margin:0 auto 8px auto;">'
+    else:
+        logo_html = '<h2 style="text-align:center;color:#1a5276;">MODOPACK</h2>'
+
+    st.markdown(f"""
+    <div class="login-box">
+        {logo_html}
+        <p style="text-align:center;color:#7f8c9a;font-size:13px;margin-bottom:4px;">
+            Control de Gestión
+        </p>
+        <hr class="login-divider">
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        with st.form("login"):
+            usuario = st.text_input("Usuario", placeholder="Ingrese su usuario")
+            clave   = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
+            ok      = st.form_submit_button("Ingresar →", use_container_width=True)
+        if ok:
+            if usuario == "admin" and clave == "modopack2026":
+                st.session_state.autenticado = True
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos")
+
+    st.markdown('<p class="login-footer">© 2026 Modopack · Soluciones en Aislación Térmica</p>', unsafe_allow_html=True)
     st.stop()
 
 st.markdown("""
