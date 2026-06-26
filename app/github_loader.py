@@ -4,6 +4,7 @@ Se activa solo cuando la app corre en Railway (variable RAILWAY_ENVIRONMENT pres
 """
 import io
 import os
+import shutil
 import tempfile
 import requests
 from pathlib import Path
@@ -28,15 +29,27 @@ def _listar(carpeta: str) -> list[dict]:
     return [f for f in r.json() if isinstance(f, dict) and f.get("type") == "file"]
 
 
+def _descargar_archivo(path_repo: str) -> bytes | None:
+    """Descarga el contenido de un archivo vía API autenticada (evita el CDN de raw,
+    que puede entregar versiones obsoletas justo después de subir)."""
+    r = requests.get(
+        f"{API_BASE}/{path_repo}",
+        params={"ref": BRANCH},
+        headers={**_headers(), "Accept": "application/vnd.github.raw"},
+        timeout=60,
+    )
+    if r.status_code == 200:
+        return r.content
+    return None
+
+
 def _descargar_carpeta(carpeta_repo: str, destino: Path):
     """Descarga todos los archivos de una carpeta del repo a un directorio local."""
     destino.mkdir(parents=True, exist_ok=True)
-    archivos = _listar(carpeta_repo)
-    for f in archivos:
-        url = f"{RAW_BASE}/{f['path']}"
-        r = requests.get(url, headers=_headers(), timeout=60)
-        if r.status_code == 200:
-            (destino / f["name"]).write_bytes(r.content)
+    for f in _listar(carpeta_repo):
+        contenido = _descargar_archivo(f["path"])
+        if contenido is not None:
+            (destino / f["name"]).write_bytes(contenido)
 
 
 def detectar_destino(nombre: str) -> str | None:
@@ -95,10 +108,20 @@ def obtener_carpeta(carpeta_repo: str) -> str:
     """Retorna path local con los archivos descargados (con cache en memoria)."""
     if carpeta_repo in _cache_dirs:
         return _cache_dirs[carpeta_repo]
-    tmp = Path(tempfile.mkdtemp())
+    # Conservar el año en la ruta local (p.ej. .../rrhh_2025) para que los
+    # archivos sin año en el nombre puedan deducirlo desde la carpeta.
+    tmp = Path(tempfile.mkdtemp()) / carpeta_repo.replace("/", "_")
     _descargar_carpeta(carpeta_repo, tmp)
     _cache_dirs[carpeta_repo] = str(tmp)
     return str(tmp)
+
+
+def limpiar_cache():
+    """Borra las carpetas descargadas para forzar una re-descarga desde GitHub.
+    Necesario porque st.cache_data.clear() no limpia este cache en memoria."""
+    for d in list(_cache_dirs.values()):
+        shutil.rmtree(Path(d).parent, ignore_errors=True)
+    _cache_dirs.clear()
 
 
 def carpetas_railway() -> dict:
