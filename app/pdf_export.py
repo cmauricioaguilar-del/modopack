@@ -9,8 +9,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
-    TableStyle,
+    Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 from processor import ranking_pareto, resumen_mensual
@@ -21,12 +20,14 @@ from processor_rrhh import (
 PAGE_W, PAGE_H = landscape(A4)
 MARGIN = 1.2 * cm
 USABLE_W = PAGE_W - 2 * MARGIN
+# Padding aplicado a cada celda de tablas exteriores (izq + der)
+_CELL_PAD = 8
 
 COLORES = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 _STYLES = getSampleStyleSheet()
-_H2 = ParagraphStyle("h2", fontSize=9, fontName="Helvetica-Bold", spaceBefore=5, spaceAfter=2)
+_H2 = ParagraphStyle("h2", fontSize=9, fontName="Helvetica-Bold", spaceBefore=4, spaceAfter=2)
 
 
 def _nombre_mes(n):
@@ -140,8 +141,8 @@ def _grafico_fig(pivot):
         barmode="group",
         yaxis_tickformat="$,.0f",
         legend_title="Año",
-        height=240,
-        margin=dict(t=10, b=30, l=60, r=10),
+        height=280,
+        margin=dict(t=10, b=30, l=70, r=10),
         font=dict(size=9),
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -150,9 +151,10 @@ def _grafico_fig(pivot):
 
 
 def _add_chart(elems, fig):
-    img_io = _fig_bytes(fig, w=int(USABLE_W * 2.8), h=240)
+    # Render at double resolution for sharpness; display at USABLE_W x 180 pt
+    img_io = _fig_bytes(fig, w=int(USABLE_W * 2), h=360)
     if img_io:
-        elems.append(Image(img_io, width=USABLE_W, height=int(USABLE_W * 240 / (USABLE_W * 2.8))))
+        elems.append(Image(img_io, width=USABLE_W, height=180))
     elems.append(Spacer(1, 0.2 * cm))
 
 
@@ -188,11 +190,25 @@ def _tabla_concepto_df(pivot, anios):
     return tabla.reset_index(drop=True)
 
 
-def _concepto_col_widths(df, total_width):
+def _concepto_col_widths(df, inner_w):
+    """Col widths for a concepto table, summing to inner_w."""
     n = len(df.columns)
-    mes_w = total_width * 0.28
-    rest_w = (total_width - mes_w) / (n - 1) if n > 1 else total_width
+    mes_w = inner_w * 0.28
+    rest_w = (inner_w - mes_w) / (n - 1) if n > 1 else inner_w
     return [mes_w] + [rest_w] * (n - 1)
+
+
+def _outer_table(rows_of_cells, col_widths):
+    """Build a multi-column outer Table. Cells must be plain lists, not KeepTogether."""
+    t = Table(rows_of_cells, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
 
 
 # ── PDF Resumen ────────────────────────────────────────────────────────────────
@@ -234,7 +250,6 @@ def generar_pdf_resumen(df_v, df_c, df_r, anios, rol="admin"):
     elems.append(_metricas(items))
     elems.append(Spacer(1, 0.4 * cm))
 
-    # Tablas por concepto
     ventas_df = _tabla_concepto_df(pv_v, anios)
     compras_df = _tabla_concepto_df(pv_c, anios)
 
@@ -249,36 +264,23 @@ def generar_pdf_resumen(df_v, df_c, df_r, anios, rol="admin"):
         res_df = _tabla_concepto_df(pv_res, anios)
 
         cw = USABLE_W / 4
-        def _cell(titulo, df):
-            return KeepTogether([
-                Paragraph(titulo, _H2),
-                _df_table(df, font_size=6, col_widths=_concepto_col_widths(df, cw)),
-            ])
-        outer = Table([[
-            _cell("📈 Ventas", ventas_df),
-            _cell("📉 Compras", compras_df),
-            _cell("👥 RRHH", rrhh_df),
-            _cell("💰 Resultado", res_df),
-        ]], colWidths=[cw] * 4)
+        inner_w = cw - _CELL_PAD
+        # Plain lists in cells — NO KeepTogether (causes unbounded height in reportlab)
+        outer = _outer_table([[
+            [Paragraph("📈 Ventas", _H2), _df_table(ventas_df, font_size=6, col_widths=_concepto_col_widths(ventas_df, inner_w))],
+            [Paragraph("📉 Compras", _H2), _df_table(compras_df, font_size=6, col_widths=_concepto_col_widths(compras_df, inner_w))],
+            [Paragraph("👥 RRHH", _H2), _df_table(rrhh_df, font_size=6, col_widths=_concepto_col_widths(rrhh_df, inner_w))],
+            [Paragraph("💰 Resultado", _H2), _df_table(res_df, font_size=6, col_widths=_concepto_col_widths(res_df, inner_w))],
+        ]], [cw] * 4)
     else:
         cw = USABLE_W / 2
-        def _cell(titulo, df):
-            return KeepTogether([
-                Paragraph(titulo, _H2),
-                _df_table(df, font_size=7, col_widths=_concepto_col_widths(df, cw)),
-            ])
-        outer = Table([[
-            _cell("📈 Ventas", ventas_df),
-            _cell("📉 Compras", compras_df),
-        ]], colWidths=[cw] * 2)
+        inner_w = cw - _CELL_PAD
+        outer = _outer_table([[
+            [Paragraph("📈 Ventas", _H2), _df_table(ventas_df, font_size=7, col_widths=_concepto_col_widths(ventas_df, inner_w))],
+            [Paragraph("📉 Compras", _H2), _df_table(compras_df, font_size=7, col_widths=_concepto_col_widths(compras_df, inner_w))],
+        ]], [cw] * 2)
 
-    outer.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-    ]))
     elems.append(outer)
-
     doc.build(elems)
     buf.seek(0)
     return buf.read()
@@ -312,6 +314,7 @@ def generar_pdf_ventas(df, anios, umbral=0.80):
     elems.append(Paragraph(f"Ranking Clientes — Pareto {int(umbral*100)}/{100-int(umbral*100)}", _H2))
     n = len(anios)
     cw = USABLE_W / n
+    inner_w = cw - _CELL_PAD
     cols = []
     for a in anios:
         top, _, _ = ranking_pareto(df, [a], "cliente", umbral)
@@ -319,13 +322,11 @@ def generar_pdf_ventas(df, anios, umbral=0.80):
         t.columns = ["Cliente", "RUT", "Monto Neto", "% Total"]
         t["Monto Neto"] = t["Monto Neto"].map("${:,.0f}".format)
         t["% Total"] = t["% Total"].map("{:.1%}".format)
-        cols.append(KeepTogether([
+        cols.append([
             Paragraph(f"Top Clientes {a}", _H2),
-            _df_table(t, font_size=6, col_widths=[cw*0.45, cw*0.20, cw*0.20, cw*0.15]),
-        ]))
-    outer = Table([cols], colWidths=[cw] * n)
-    outer.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    elems.append(outer)
+            _df_table(t, font_size=6, col_widths=[inner_w*0.45, inner_w*0.20, inner_w*0.21, inner_w*0.14]),
+        ])
+    elems.append(_outer_table([cols], [cw] * n))
 
     doc.build(elems)
     buf.seek(0)
@@ -360,6 +361,7 @@ def generar_pdf_compras(df, anios, umbral=0.80):
     elems.append(Paragraph(f"Ranking Proveedores — Pareto {int(umbral*100)}/{100-int(umbral*100)}", _H2))
     n = len(anios)
     cw = USABLE_W / n
+    inner_w = cw - _CELL_PAD
     cols = []
     for a in anios:
         top, _, _ = ranking_pareto(df, [a], "proveedor", umbral)
@@ -367,13 +369,11 @@ def generar_pdf_compras(df, anios, umbral=0.80):
         t.columns = ["Proveedor", "RUT", "Monto Neto", "% Total"]
         t["Monto Neto"] = t["Monto Neto"].map("${:,.0f}".format)
         t["% Total"] = t["% Total"].map("{:.1%}".format)
-        cols.append(KeepTogether([
+        cols.append([
             Paragraph(f"Top Proveedores {a}", _H2),
-            _df_table(t, font_size=6, col_widths=[cw*0.45, cw*0.20, cw*0.20, cw*0.15]),
-        ]))
-    outer = Table([cols], colWidths=[cw] * n)
-    outer.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    elems.append(outer)
+            _df_table(t, font_size=6, col_widths=[inner_w*0.45, inner_w*0.20, inner_w*0.21, inner_w*0.14]),
+        ])
+    elems.append(_outer_table([cols], [cw] * n))
 
     doc.build(elems)
     buf.seek(0)
@@ -406,7 +406,11 @@ def generar_pdf_rrhh(df, anios, umbral=0.80):
     pivot = resumen_mensual_rrhh(df, anios)
     _add_chart(elems, _grafico_fig(pivot))
 
-    # Centro de costo y ranking en columnas
+    cw_l = USABLE_W * 0.45
+    cw_r = USABLE_W * 0.55
+    inner_l = cw_l - _CELL_PAD
+    inner_r = cw_r - _CELL_PAD
+
     cc = resumen_por_centro_costo(df, anios)
     t_cc = cc[["centro_costo", "costo_empresa", "liquido", "imponible"]].copy()
     t_cc.columns = ["Centro Costo", "Costo Empresa", "Líquido", "Imponible"]
@@ -419,23 +423,12 @@ def generar_pdf_rrhh(df, anios, umbral=0.80):
     t_emp["Costo Empresa"] = t_emp["Costo Empresa"].map("${:,.0f}".format)
     t_emp["% Total"] = t_emp["% Total"].map("{:.1%}".format)
 
-    cw_l = USABLE_W * 0.45
-    cw_r = USABLE_W * 0.55
-    outer = Table([[
-        KeepTogether([
-            Paragraph("Costo por Centro de Costo", _H2),
-            _df_table(t_cc, font_size=7, col_widths=[cw_l*0.4, cw_l*0.2, cw_l*0.2, cw_l*0.2]),
-        ]),
-        KeepTogether([
-            Paragraph(f"Ranking Empleados — Pareto {int(umbral*100)}/{100-int(umbral*100)}", _H2),
-            _df_table(t_emp, font_size=7, col_widths=[cw_r*0.55, cw_r*0.30, cw_r*0.15]),
-        ]),
-    ]], colWidths=[cw_l, cw_r])
-    outer.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("RIGHTPADDING", (0, 0), (0, 0), 8),
-    ]))
-    elems.append(outer)
+    elems.append(_outer_table([[
+        [Paragraph("Costo por Centro de Costo", _H2),
+         _df_table(t_cc, font_size=7, col_widths=[inner_l*0.4, inner_l*0.2, inner_l*0.2, inner_l*0.2])],
+        [Paragraph(f"Ranking Empleados — Pareto {int(umbral*100)}/{100-int(umbral*100)}", _H2),
+         _df_table(t_emp, font_size=7, col_widths=[inner_r*0.55, inner_r*0.30, inner_r*0.15])],
+    ]], [cw_l, cw_r]))
 
     doc.build(elems)
     buf.seek(0)
