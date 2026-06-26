@@ -2,8 +2,8 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
-from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo
-from github_loader import EN_RAILWAY, carpetas_railway, subir_archivo
+from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo, diagnostico_rrhh
+from github_loader import EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache
 
 st.set_page_config(
     page_title="Control de Gestión",
@@ -166,6 +166,8 @@ with st.sidebar:
             )
 
     if st.button("🔄 Recargar datos", use_container_width=True):
+        if EN_RAILWAY:
+            limpiar_cache()
         st.cache_data.clear()
         st.rerun()
 
@@ -190,8 +192,21 @@ with st.sidebar:
                     else:
                         st.error(msg)
                 if any(ok for ok, _ in resultados):
+                    limpiar_cache()
                     st.cache_data.clear()
                     st.rerun()
+
+    # Diagnóstico de carga RRHH — ayuda a detectar meses que quedan en 0
+    if st.session_state.get("autenticado"):
+        with st.expander("🩺 Diagnóstico carga RRHH", expanded=False):
+            if st.button("Ejecutar diagnóstico", use_container_width=True):
+                diag = diagnostico_rrhh([carpeta_rrhh_2025, carpeta_rrhh_2026])
+                if diag.empty:
+                    st.caption("No se encontraron archivos .xlsx de RRHH.")
+                else:
+                    diag_fmt = diag.copy()
+                    diag_fmt["costo_empresa"] = diag_fmt["costo_empresa"].map("${:,.0f}".format)
+                    st.dataframe(diag_fmt, use_container_width=True, hide_index=True)
 
     st.divider()
     umbral = st.slider("Umbral Pareto (%)", 50, 95, 80, 5) / 100
