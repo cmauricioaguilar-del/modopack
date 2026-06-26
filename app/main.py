@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+from datetime import date as _date
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
 from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo, diagnostico_rrhh
 from github_loader import EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache
@@ -12,9 +13,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Usuarios y roles ──────────────────────────────────────────────────────────
+USERS = {
+    "admin":    {"clave": "modopack2026", "rol": "admin"},
+    "gerencia": {"clave": "modopack2026", "rol": "gerencia"},
+}
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
+if "rol" not in st.session_state:
+    st.session_state.rol = "admin"
 
 if not st.session_state.autenticado:
     import base64, os
@@ -103,8 +112,10 @@ if not st.session_state.autenticado:
             clave   = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
             ok      = st.form_submit_button("Ingresar →", use_container_width=True)
         if ok:
-            if usuario == "admin" and clave == "modopack2026":
+            u = USERS.get(usuario)
+            if u and clave == u["clave"]:
                 st.session_state.autenticado = True
+                st.session_state.rol = u["rol"]
                 st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
@@ -114,6 +125,8 @@ if not st.session_state.autenticado:
         © 2026 Modopack · Soluciones en Aislación Térmica
     </p>""", unsafe_allow_html=True)
     st.stop()
+
+rol = st.session_state.rol
 
 st.markdown("""
 <style>
@@ -172,7 +185,7 @@ with st.sidebar:
         st.rerun()
 
     # Uploader — solo admin en Railway
-    if EN_RAILWAY and st.session_state.get("autenticado"):
+    if EN_RAILWAY and rol == "admin":
         st.divider()
         with st.expander("📤 Subir archivos nuevos", expanded=False):
             archivos = st.file_uploader(
@@ -196,8 +209,8 @@ with st.sidebar:
                     st.cache_data.clear()
                     st.rerun()
 
-    # Diagnóstico de carga RRHH — ayuda a detectar meses que quedan en 0
-    if st.session_state.get("autenticado"):
+    # Diagnóstico de carga RRHH — solo admin
+    if rol == "admin":
         with st.expander("🩺 Diagnóstico carga RRHH", expanded=False):
             if st.button("Ejecutar diagnóstico", use_container_width=True):
                 diag = diagnostico_rrhh([carpeta_rrhh_2025, carpeta_rrhh_2026])
@@ -331,7 +344,6 @@ def render_modulo(df, anios, entidad_col, label, umbral, key):
     datos = df[df["anio"].isin(anios)]
     anios_ord = sorted(anios)
 
-    # Una fila de métricas por año
     for i, a in enumerate(anios_ord):
         d = datos[datos["anio"] == a]
         prev = datos[datos["anio"] == anios_ord[i-1]] if i > 0 else None
@@ -352,11 +364,10 @@ def render_modulo(df, anios, entidad_col, label, umbral, key):
     render_pareto(df, anios, entidad_col, label, umbral, key)
 
 
-def render_resumen(df_v, df_c, df_r, anios):
+def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
     anios = sorted(anios)
 
     def _pivot_concepto(df, valor_col):
-        """Retorna pivot mes x año para un concepto."""
         if df.empty:
             return pd.DataFrame()
         filtrado = df[df["anio"].isin(anios)]
@@ -372,23 +383,22 @@ def render_resumen(df_v, df_c, df_r, anios):
 
     pv_v = _pivot_concepto(df_v, "monto_neto")
     pv_c = _pivot_concepto(df_c, "monto_neto")
-    pv_r = _pivot_concepto(df_r, "costo_empresa")
+    pv_r = _pivot_concepto(df_r, "costo_empresa") if rol == "admin" else pd.DataFrame()
 
-    # Meses presentes en orden
-    meses_idx = sorted(
-        set(pv_v.index) | set(pv_c.index) | set(pv_r.index),
-        key=lambda m: MESES.index(m) if m in MESES else 99,
-    )
+    all_idx = set(pv_v.index) | set(pv_c.index)
+    if not pv_r.empty:
+        all_idx |= set(pv_r.index)
+    meses_idx = sorted(all_idx, key=lambda m: MESES.index(m) if m in MESES else 99)
 
     def _alinear(pivot):
         return pivot.reindex(meses_idx).fillna(0) if not pivot.empty else pd.DataFrame(0, index=meses_idx, columns=anios)
 
     pv_v = _alinear(pv_v)
     pv_c = _alinear(pv_c)
-    pv_r = _alinear(pv_r)
+    if rol == "admin":
+        pv_r = _alinear(pv_r)
 
     def _variacion(pivot):
-        """% variación entre último y penúltimo año."""
         if len(pivot.columns) < 2:
             return None
         a1, a2 = pivot.columns[-2], pivot.columns[-1]
@@ -399,7 +409,6 @@ def render_resumen(df_v, df_c, df_r, anios):
         st.markdown(f"**{titulo}**")
         tabla = pivot.copy()
         tabla.columns = [str(a) for a in tabla.columns]
-        # Fila total
         total_row = tabla.sum().rename("TOTAL")
         tabla = pd.concat([tabla, total_row.to_frame().T])
 
@@ -437,48 +446,64 @@ def render_resumen(df_v, df_c, df_r, anios):
         ])
         st.dataframe(styled, use_container_width=True)
 
-    # ── Tabla Resultado ────────────────────────────────────────────────────────
-    pv_res = pd.DataFrame(index=meses_idx)
-    for a in anios:
-        v = pv_v[a] if a in pv_v.columns else 0
-        c = pv_c[a] if a in pv_c.columns else 0
-        r = pv_r[a] if a in pv_r.columns else 0
-        pv_res[a] = v - c - r
-
+    # ── Métricas ───────────────────────────────────────────────────────────────
     def _delta(nuevo, viejo):
         if viejo and viejo != 0:
             return f"{((nuevo - viejo) / abs(viejo)) * 100:+.1f}%"
         return None
 
-    # Métricas por cada año seleccionado
-    for i, a in enumerate(anios):
-        ant = anios[i-1] if i > 0 else None
-        tot_v   = pv_v[a].sum()   if a in pv_v.columns   else 0
-        tot_c   = pv_c[a].sum()   if a in pv_c.columns   else 0
-        tot_r   = pv_r[a].sum()   if a in pv_r.columns   else 0
-        tot_res = pv_res[a].sum() if a in pv_res.columns else 0
-        v_ant   = pv_v[ant].sum()   if ant and ant in pv_v.columns   else None
-        c_ant   = pv_c[ant].sum()   if ant and ant in pv_c.columns   else None
-        res_ant = pv_res[ant].sum() if ant and ant in pv_res.columns else None
+    if rol == "admin":
+        pv_res = pd.DataFrame(index=meses_idx)
+        for a in anios:
+            v = pv_v[a] if a in pv_v.columns else 0
+            c = pv_c[a] if a in pv_c.columns else 0
+            r = pv_r[a] if a in pv_r.columns else 0
+            pv_res[a] = v - c - r
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric(f"Ventas {a}",    f"${tot_v:,.0f}",   _delta(tot_v, v_ant))
-        c2.metric(f"Compras {a}",   f"${tot_c:,.0f}",   _delta(tot_c, c_ant))
-        c3.metric(f"RRHH {a}",      f"${tot_r:,.0f}")
-        c4.metric(f"Resultado {a}", f"${tot_res:,.0f}", _delta(tot_res, res_ant))
+        for i, a in enumerate(anios):
+            ant = anios[i-1] if i > 0 else None
+            tot_v   = pv_v[a].sum()   if a in pv_v.columns   else 0
+            tot_c   = pv_c[a].sum()   if a in pv_c.columns   else 0
+            tot_r   = pv_r[a].sum()   if a in pv_r.columns   else 0
+            tot_res = pv_res[a].sum() if a in pv_res.columns else 0
+            v_ant   = pv_v[ant].sum()   if ant and ant in pv_v.columns   else None
+            c_ant   = pv_c[ant].sum()   if ant and ant in pv_c.columns   else None
+            res_ant = pv_res[ant].sum() if ant and ant in pv_res.columns else None
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric(f"Ventas {a}",    f"${tot_v:,.0f}",   _delta(tot_v, v_ant))
+            c2.metric(f"Compras {a}",   f"${tot_c:,.0f}",   _delta(tot_c, c_ant))
+            c3.metric(f"RRHH {a}",      f"${tot_r:,.0f}")
+            c4.metric(f"Resultado {a}", f"${tot_res:,.0f}", _delta(tot_res, res_ant))
+    else:
+        for i, a in enumerate(anios):
+            ant = anios[i-1] if i > 0 else None
+            tot_v = pv_v[a].sum() if a in pv_v.columns else 0
+            tot_c = pv_c[a].sum() if a in pv_c.columns else 0
+            v_ant = pv_v[ant].sum() if ant and ant in pv_v.columns else None
+            c_ant = pv_c[ant].sum() if ant and ant in pv_c.columns else None
+            c1, c2 = st.columns(2)
+            c1.metric(f"Ventas {a}",  f"${tot_v:,.0f}", _delta(tot_v, v_ant))
+            c2.metric(f"Compras {a}", f"${tot_c:,.0f}", _delta(tot_c, c_ant))
 
     st.divider()
 
-    # ── Tablas en una sola fila horizontal ───────────────────────────────────
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        _tabla_concepto("📈 Ventas", pv_v, color_neg_es_malo=False)
-    with col2:
-        _tabla_concepto("📉 Compras", pv_c, color_neg_es_malo=True)
-    with col3:
-        _tabla_concepto("👥 RRHH", pv_r, color_neg_es_malo=True)
-    with col4:
-        _tabla_concepto("💰 Resultado", pv_res, color_neg_es_malo=False)
+    # ── Tablas ─────────────────────────────────────────────────────────────────
+    if rol == "admin":
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            _tabla_concepto("📈 Ventas", pv_v, color_neg_es_malo=False)
+        with col2:
+            _tabla_concepto("📉 Compras", pv_c, color_neg_es_malo=True)
+        with col3:
+            _tabla_concepto("👥 RRHH", pv_r, color_neg_es_malo=True)
+        with col4:
+            _tabla_concepto("💰 Resultado", pv_res, color_neg_es_malo=False)
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            _tabla_concepto("📈 Ventas", pv_v, color_neg_es_malo=False)
+        with col2:
+            _tabla_concepto("📉 Compras", pv_c, color_neg_es_malo=True)
 
 
 def _nombre_mes(n):
@@ -489,7 +514,6 @@ def render_rrhh(df, anios, umbral):
     datos = df[df["anio"].isin(anios)]
     anios_ord = sorted(anios)
 
-    # Una fila de métricas por año
     for i, a in enumerate(anios_ord):
         d = datos[datos["anio"] == a]
         prev = datos[datos["anio"] == anios_ord[i-1]] if i > 0 else None
@@ -503,12 +527,10 @@ def render_rrhh(df, anios, umbral):
         c2.metric(f"Líquido Pagado {a}", f"${liq_a:,.0f}")
         c3.metric(f"Empleados únicos {a}", emp_a)
 
-    # ── Evolución mensual ──────────────────────────────────────────────────────
     st.subheader("Evolución mensual — Costo Empresa")
     pivot = resumen_mensual_rrhh(df, anios)
     grafico_mensual(pivot)
 
-    # ── Centro de costo ────────────────────────────────────────────────────────
     st.divider()
     st.subheader("Costo por Centro de Costo")
     cc = resumen_por_centro_costo(df, anios)
@@ -534,7 +556,6 @@ def render_rrhh(df, anios, umbral):
         t[col] = t[col].map("${:,.0f}".format)
     st.dataframe(t, use_container_width=True, hide_index=True)
 
-    # ── Ranking empleados Pareto ───────────────────────────────────────────────
     st.divider()
     st.subheader(f"Ranking Empleados — Pareto {int(umbral*100)}/{100-int(umbral*100)}")
     top, otros, total = ranking_empleados(df, anios, umbral)
@@ -559,26 +580,76 @@ def render_rrhh(df, anios, umbral):
             st.dataframe(t3, use_container_width=True, hide_index=True)
 
 
+# ── Helpers PDF ───────────────────────────────────────────────────────────────
+def _boton_pdf(key, generador_fn, nombre_archivo):
+    """Renderiza botón Exportar PDF + descarga."""
+    if st.button("🖨️ Exportar PDF", key=f"btn_pdf_{key}", help="Genera un PDF landscape con el contenido de esta pestaña"):
+        with st.spinner("Generando PDF..."):
+            try:
+                st.session_state[f"pdf_bytes_{key}"] = generador_fn()
+            except Exception as e:
+                st.error(f"Error al generar PDF: {e}")
+    if f"pdf_bytes_{key}" in st.session_state:
+        st.download_button(
+            "⬇️ Descargar PDF",
+            data=st.session_state[f"pdf_bytes_{key}"],
+            file_name=nombre_archivo,
+            mime="application/pdf",
+            key=f"dl_pdf_{key}",
+        )
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_res, tab_v, tab_c, tab_r = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH"])
+_fecha_hoy = _date.today().strftime("%Y%m%d")
+
+if rol == "gerencia":
+    tab_res, tab_v, tab_c = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras"])
+    tab_r = None
+else:
+    tab_res, tab_v, tab_c, tab_r = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH"])
 
 with tab_res:
-    render_resumen(df_ventas, df_compras, df_rrhh, anios_sel)
+    _boton_pdf(
+        "resumen",
+        lambda: __import__("pdf_export").generar_pdf_resumen(df_ventas, df_compras, df_rrhh, anios_sel, rol),
+        f"resumen_{_fecha_hoy}.pdf",
+    )
+    st.divider()
+    render_resumen(df_ventas, df_compras, df_rrhh, anios_sel, rol)
 
 with tab_v:
+    _boton_pdf(
+        "ventas",
+        lambda: __import__("pdf_export").generar_pdf_ventas(df_ventas, anios_sel, umbral),
+        f"ventas_{_fecha_hoy}.pdf",
+    )
+    st.divider()
     if df_ventas.empty:
         st.warning("No hay archivos de ventas en la carpeta indicada.")
     else:
         render_modulo(df_ventas, anios_sel, "cliente", "cliente", umbral, "v")
 
 with tab_c:
+    _boton_pdf(
+        "compras",
+        lambda: __import__("pdf_export").generar_pdf_compras(df_compras, anios_sel, umbral),
+        f"compras_{_fecha_hoy}.pdf",
+    )
+    st.divider()
     if df_compras.empty:
         st.warning("No hay archivos de compras en la carpeta indicada.")
     else:
         render_modulo(df_compras, anios_sel, "proveedor", "proveedor", umbral, "c")
 
-with tab_r:
-    if df_rrhh.empty:
-        st.warning("No hay archivos de RRHH en la carpeta indicada.")
-    else:
-        render_rrhh(df_rrhh, anios_sel, umbral)
+if tab_r is not None:
+    with tab_r:
+        _boton_pdf(
+            "rrhh",
+            lambda: __import__("pdf_export").generar_pdf_rrhh(df_rrhh, anios_sel, umbral),
+            f"rrhh_{_fecha_hoy}.pdf",
+        )
+        st.divider()
+        if df_rrhh.empty:
+            st.warning("No hay archivos de RRHH en la carpeta indicada.")
+        else:
+            render_rrhh(df_rrhh, anios_sel, umbral)
