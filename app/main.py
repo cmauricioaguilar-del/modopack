@@ -667,6 +667,18 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str):
 
 
 def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
+    c1, c2 = st.columns([8, 2])
+    with c2:
+        if st.button("🔄 Recargar flujos", key="btn_recargar_flujos"):
+            get_flujos.clear()
+            limpiar_cache()
+            st.rerun()
+    with c1:
+        st.caption(
+            f"Cuentas por Cobrar: {'✅ ' + str(len(df_cobrar)) + ' facturas' if not df_cobrar.empty else '❌ sin datos'} | "
+            f"Cuentas por Pagar: {'✅ ' + str(len(df_deudas)) + ' facturas' if not df_deudas.empty else '❌ sin datos'}"
+        )
+
     sub = st.radio(
         "Ver",
         ["💰 Cuentas por Cobrar", "📋 Cuentas por Pagar"],
