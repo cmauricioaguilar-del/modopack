@@ -688,6 +688,19 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
 
 def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
+    # Fuente 18px para widgets del tab Flujos
+    st.markdown(
+        """
+        <style>
+        .stTextInput label p, .stTextInput input,
+        .stRadio label p,
+        .stExpander summary p, .stExpander details div p,
+        .stMarkdown p, .stCaption p,
+        .stButton button { font-size: 18px !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     # Fila superior: status + reload
     c1, c2 = st.columns([8, 2])
     with c2:
