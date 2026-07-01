@@ -124,6 +124,12 @@ if not st.session_state.autenticado:
             else:
                 st.error("Usuario o contraseña incorrectos")
 
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+        if st.button("📊 Entrar como Gerencia", use_container_width=True):
+            st.session_state.autenticado = True
+            st.session_state.rol = "gerencia"
+            st.rerun()
+
     st.markdown("""
     <p style="text-align:center;color:#aab0bb;font-size:12px;margin-top:32px;">
         © 2026 Modopack · Soluciones en Aislación Térmica
