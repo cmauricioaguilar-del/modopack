@@ -686,33 +686,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
-def _render_busqueda_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame, filtro: str):
-    """Muestra resultados de búsqueda unificada en ambas tablas."""
-    q = filtro.strip().lower()
-
-    def _filtrar(df, entidad_col):
-        mascara = pd.Series(False, index=df.index)
-        for col in [entidad_col, "num_factura", "rut", "vendedor"]:
-            if col in df.columns:
-                mascara |= df[col].astype(str).str.lower().str.contains(q, na=False)
-        return df[mascara]
-
-    res_cobrar = _filtrar(df_cobrar, "cliente") if not df_cobrar.empty else pd.DataFrame()
-    res_deudas = _filtrar(df_deudas, "proveedor") if not df_deudas.empty else pd.DataFrame()
-
-    if res_cobrar.empty and res_deudas.empty:
-        st.info("Sin resultados para la búsqueda.")
-        return
-
-    if not res_cobrar.empty:
-        st.markdown("#### 💰 Cuentas por Cobrar")
-        _render_seccion_flujos(res_cobrar, "cliente")
-        st.divider()
-
-    if not res_deudas.empty:
-        st.markdown("#### 📋 Cuentas por Pagar")
-        _render_seccion_flujos(res_deudas, "proveedor")
-
 
 def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
     # Fila superior: status + reload
@@ -735,21 +708,19 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
         key="flujos_busqueda",
     )
 
+    sub = st.radio(
+        "Ver",
+        ["💰 Cuentas por Cobrar", "📋 Cuentas por Pagar"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
     st.divider()
 
-    if filtro.strip():
-        _render_busqueda_flujos(df_cobrar, df_deudas, filtro)
+    if sub == "💰 Cuentas por Cobrar":
+        _render_seccion_flujos(df_cobrar, "cliente", filtro)
     else:
-        sub = st.radio(
-            "Ver",
-            ["💰 Cuentas por Cobrar", "📋 Cuentas por Pagar"],
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        if sub == "💰 Cuentas por Cobrar":
-            _render_seccion_flujos(df_cobrar, "cliente")
-        else:
-            _render_seccion_flujos(df_deudas, "proveedor")
+        _render_seccion_flujos(df_deudas, "proveedor", filtro)
 
 
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
