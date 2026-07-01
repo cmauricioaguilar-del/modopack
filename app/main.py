@@ -139,7 +139,8 @@ if "flujos_config" not in st.session_state:
 st.markdown("""
 <style>
 [data-testid="stMetric"] { background:#f0f2f6; border-radius:8px; padding:12px; }
-.stTabs [data-baseweb="tab"] p { font-size: 20px !important; }
+.stTabs [data-baseweb="tab"] p { font-size: 40px !important; }
+.stRadio label p { font-size: 40px !important; }
 </style>
 """, unsafe_allow_html=True)
 
