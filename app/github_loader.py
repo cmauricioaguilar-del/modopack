@@ -64,7 +64,10 @@ def detectar_destino(nombre: str) -> str | None:
     if "RCV_COMPRA_REGISTRO_" in n and n.endswith(".CSV"):
         anio = nombre[-10:-4][:4]
         return f"compras/{anio}"
-    if n in ("DEUDAS.XLSX", "POR_COBRAR.XLSX"):
+    _nn = n.replace(" ", "_")
+    if (_nn in ("DEUDAS.XLSX", "POR_COBRAR.XLSX")
+            or ("POR_COBRAR" in _nn and _nn.endswith(".XLSX"))
+            or ("DEUDAS" in _nn and _nn.endswith(".XLSX") and "RCV" not in _nn)):
         return "flujos"
     if n.endswith(".XLSX"):
         import re
