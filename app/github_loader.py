@@ -64,6 +64,8 @@ def detectar_destino(nombre: str) -> str | None:
     if "RCV_COMPRA_REGISTRO_" in n and n.endswith(".CSV"):
         anio = nombre[-10:-4][:4]
         return f"compras/{anio}"
+    if n in ("DEUDAS.XLSX", "POR_COBRAR.XLSX"):
+        return "flujos"
     if n.endswith(".XLSX"):
         import re
         m = re.search(r"(20\d{2})", nombre)
@@ -122,6 +124,45 @@ def limpiar_cache():
     for d in list(_cache_dirs.values()):
         shutil.rmtree(Path(d).parent, ignore_errors=True)
     _cache_dirs.clear()
+
+
+def obtener_archivo_flujos(nombre: str) -> bytes | None:
+    """Descarga un archivo de la carpeta flujos/ del repo."""
+    return _descargar_archivo(f"flujos/{nombre}")
+
+
+def leer_config_flujos() -> dict:
+    """Lee config/flujos.json del repo. Retorna defaults si no existe."""
+    contenido = _descargar_archivo("config/flujos.json")
+    if contenido:
+        import json
+        try:
+            return json.loads(contenido)
+        except Exception:
+            pass
+    return {"gerencia_puede_ver": False}
+
+
+def guardar_config_flujos(config: dict) -> bool:
+    """Guarda config/flujos.json en el repo. Retorna True si OK."""
+    import json
+    import base64 as _b64
+
+    path_repo = "config/flujos.json"
+    url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
+    r = requests.get(url, headers=_headers(), timeout=15)
+    sha = r.json().get("sha") if r.status_code == 200 else None
+
+    payload = {
+        "message": "update flujos config",
+        "content": _b64.b64encode(json.dumps(config).encode()).decode(),
+        "branch": BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    r = requests.put(url, headers=_headers(), json=payload, timeout=30)
+    return r.status_code in (200, 201)
 
 
 def carpetas_railway() -> dict:

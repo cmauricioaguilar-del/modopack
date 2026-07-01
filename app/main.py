@@ -4,7 +4,11 @@ import pandas as pd
 from datetime import date as _date
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
 from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo, diagnostico_rrhh
-from github_loader import EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache
+from github_loader import (
+    EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
+    obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
+)
+from processor_flujos import cargar_por_cobrar, cargar_deudas, TRAMOS, TRAMOS_LABEL
 
 st.set_page_config(
     page_title="Control de Gestión",
@@ -128,6 +132,10 @@ if not st.session_state.autenticado:
 
 rol = st.session_state.rol
 
+# ── Config Flujos ─────────────────────────────────────────────────────────────
+if "flujos_config" not in st.session_state:
+    st.session_state.flujos_config = leer_config_flujos() if EN_RAILWAY else {"gerencia_puede_ver": False}
+
 st.markdown("""
 <style>
 [data-testid="stMetric"] { background:#f0f2f6; border-radius:8px; padding:12px; }
@@ -209,6 +217,18 @@ with st.sidebar:
                     st.cache_data.clear()
                     st.rerun()
 
+    # Permisos Gerencia — solo admin
+    if rol == "admin":
+        st.divider()
+        with st.expander("🔐 Permisos Gerencia", expanded=False):
+            _cur = st.session_state.flujos_config.get("gerencia_puede_ver", False)
+            _nuevo = st.toggle("Gerencia puede ver Flujos", value=_cur, key="toggle_flujos_gerencia")
+            if _nuevo != _cur:
+                st.session_state.flujos_config["gerencia_puede_ver"] = _nuevo
+                if EN_RAILWAY:
+                    guardar_config_flujos(st.session_state.flujos_config)
+                    st.success("✅ Permiso guardado")
+
     # Diagnóstico de carga RRHH — solo admin
     if rol == "admin":
         with st.expander("🩺 Diagnóstico carga RRHH", expanded=False):
@@ -244,9 +264,21 @@ def get_rrhh(c2025, c2026):
             frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-df_ventas = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
+@st.cache_data(show_spinner="Cargando flujos...")
+def get_flujos():
+    if not EN_RAILWAY:
+        return pd.DataFrame(), pd.DataFrame()
+    cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
+    deudas_bytes  = obtener_archivo_flujos("DEUDAS.xlsx")
+    return (
+        cargar_por_cobrar(cobrar_bytes) if cobrar_bytes else pd.DataFrame(),
+        cargar_deudas(deudas_bytes)     if deudas_bytes  else pd.DataFrame(),
+    )
+
+df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
 df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
-df_rrhh = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
+df_rrhh    = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
+df_cobrar, df_deudas = get_flujos()
 
 anios_v = sorted(df_ventas["anio"].unique().tolist()) if not df_ventas.empty else []
 anios_c = sorted(df_compras["anio"].unique().tolist()) if not df_compras.empty else []
@@ -580,6 +612,74 @@ def render_rrhh(df, anios, umbral):
             st.dataframe(t3, use_container_width=True, hide_index=True)
 
 
+# ── Flujos ───────────────────────────────────────────────────────────────────
+def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str):
+    if df.empty:
+        st.info("No hay datos disponibles. Sube el archivo desde ⚙️ Configuración.")
+        return
+
+    totales_gen = {t: df[t].sum() for t in TRAMOS}
+    total_gen   = sum(totales_gen.values())
+
+    # Métricas generales
+    st.metric("**Total general**", f"${total_gen:,.0f}")
+    cols = st.columns(5)
+    for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
+        cols[i].metric(l, f"${totales_gen[t]:,.0f}")
+
+    st.divider()
+
+    # Totales por entidad, ordenados de mayor a menor
+    totales_ent = (
+        df.groupby(entidad_col)[TRAMOS]
+        .sum()
+        .assign(total=lambda x: x[TRAMOS].sum(axis=1))
+        .sort_values("total", ascending=False)
+    )
+
+    for entidad, row in totales_ent.iterrows():
+        total_ent = row["total"]
+        with st.expander(f"**{entidad}** — ${total_ent:,.0f}"):
+            # Tramos del grupo
+            gcols = st.columns(5)
+            for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
+                gcols[i].metric(l, f"${row[t]:,.0f}")
+
+            # Facturas individuales del grupo
+            grupo = df[df[entidad_col] == entidad].copy()
+            disp_cols = [c for c in ["rut", "vendedor", "num_factura", "emision", "vencimiento"] if c in grupo.columns] + TRAMOS
+            disp = grupo[disp_cols].copy()
+            for t in TRAMOS:
+                disp[t] = disp[t].map("${:,.0f}".format)
+            disp = disp.rename(columns={
+                "rut":         "RUT",
+                "vendedor":    "Vendedor",
+                "num_factura": "N° Factura",
+                "emision":     "Emisión",
+                "vencimiento": "Vencimiento",
+                "sin_vencer":  "Sin Vencer",
+                "d30":         "30 días",
+                "d60":         "60 días",
+                "d90":         "90 días",
+                "mas90":       "Más 90",
+            })
+            st.dataframe(disp, use_container_width=True, hide_index=True)
+
+
+def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
+    sub = st.radio(
+        "Ver",
+        ["💰 Cuentas por Cobrar", "📋 Cuentas por Pagar"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    st.divider()
+    if sub == "💰 Cuentas por Cobrar":
+        _render_seccion_flujos(df_cobrar, "cliente")
+    else:
+        _render_seccion_flujos(df_deudas, "proveedor")
+
+
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
 def _boton_pdf(key, generador_fn, nombre_archivo):
     """Renderiza botón Exportar PDF + descarga."""
@@ -602,11 +702,17 @@ def _boton_pdf(key, generador_fn, nombre_archivo):
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 _fecha_hoy = _date.today().strftime("%Y%m%d")
 
+_gerencia_ve_flujos = st.session_state.flujos_config.get("gerencia_puede_ver", False)
+
 if rol == "gerencia":
-    tab_res, tab_v, tab_c = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras"])
+    if _gerencia_ve_flujos:
+        tab_res, tab_v, tab_c, tab_f = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "💸 Flujos"])
+    else:
+        tab_res, tab_v, tab_c = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras"])
+        tab_f = None
     tab_r = None
 else:
-    tab_res, tab_v, tab_c, tab_r = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH"])
+    tab_res, tab_v, tab_c, tab_r, tab_f = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH", "💸 Flujos"])
 
 with tab_res:
     _boton_pdf(
@@ -653,3 +759,7 @@ if tab_r is not None:
             st.warning("No hay archivos de RRHH en la carpeta indicada.")
         else:
             render_rrhh(df_rrhh, anios_sel, umbral)
+
+if tab_f is not None:
+    with tab_f:
+        render_flujos(df_cobrar, df_deudas)
