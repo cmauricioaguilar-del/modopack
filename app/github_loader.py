@@ -79,6 +79,7 @@ def detectar_destino(nombre: str) -> str | None:
 
 def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     """Sube o reemplaza un archivo en modopack-datos. Retorna (ok, mensaje)."""
+    nombre = nombre.replace(" ", "_")  # normalizar: espacios → guiones bajos
     carpeta = detectar_destino(nombre)
     if not carpeta:
         return False, f"No se pudo detectar el tipo de archivo: {nombre}"
