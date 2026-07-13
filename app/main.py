@@ -913,53 +913,66 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
                 expanded=False,
             ):
-                # Construir tabla de trabajadores + fila de totales
-                tabla = df_mes[cols_tabla].copy()
-                tabla = tabla.rename(columns=labels_tabla)
+                # Construir filas de datos + fila de totales
+                def _fp(v):
+                    try:
+                        f = float(v)
+                        return f"${f:,.0f}" if f != 0 else "—"
+                    except Exception:
+                        return "—"
+
+                headers = [labels_tabla[c] for c in cols_tabla]
+                filas_html = []
+                for _, row in df_mes.iterrows():
+                    celdas = []
+                    for i, c in enumerate(cols_tabla):
+                        val = row.get(c, "")
+                        txt = str(val).strip() if c == "empleado" else _fp(val)
+                        align = "left" if c == "empleado" else "right"
+                        sticky = "position:sticky;left:0;background:#fff;z-index:1;white-space:nowrap;" if c == "empleado" else "white-space:nowrap;"
+                        celdas.append(f"<td style='padding:4px 10px;{sticky}text-align:{align}'>{txt}</td>")
+                    filas_html.append("<tr>" + "".join(celdas) + "</tr>")
 
                 # Fila de totales
-                fila_total = {}
-                for c, label in labels_tabla.items():
+                celdas_total = []
+                for c in cols_tabla:
                     if c == "empleado":
-                        fila_total[label] = "TOTAL"
-                    elif c in df_mes.columns:
-                        try:
-                            fila_total[label] = df_mes[c].sum()
-                        except Exception:
-                            fila_total[label] = ""
+                        celdas_total.append(
+                            "<td style='padding:4px 10px;font-weight:700;background:#e8eaf6;"
+                            "position:sticky;left:0;z-index:1;white-space:nowrap;text-align:left'>TOTAL</td>"
+                        )
                     else:
-                        fila_total[label] = ""
+                        try:
+                            tot = df_mes[c].sum()
+                            txt = _fp(tot)
+                        except Exception:
+                            txt = "—"
+                        celdas_total.append(
+                            f"<td style='padding:4px 10px;font-weight:700;background:#e8eaf6;"
+                            f"white-space:nowrap;text-align:right'>{txt}</td>"
+                        )
+                filas_html.append("<tr>" + "".join(celdas_total) + "</tr>")
 
-                tabla_con_total = pd.concat(
-                    [tabla, pd.DataFrame([fila_total])],
-                    ignore_index=True,
-                )
+                # Headers
+                ths = []
+                for c, h in zip(cols_tabla, headers):
+                    sticky = ("position:sticky;left:0;z-index:2;background:#f0f2f6;" if c == "empleado"
+                              else "background:#f0f2f6;")
+                    ths.append(f"<th style='padding:6px 10px;white-space:nowrap;text-align:center;{sticky}'>{h}</th>")
 
-                # Formatear montos como pesos (excepto Empleado)
-                cols_num_label = [labels_tabla[c] for c in cols_tabla if c != "empleado"]
-                for col in cols_num_label:
-                    tabla_con_total[col] = tabla_con_total[col].apply(
-                        lambda v: f"${float(v):,.0f}" if v not in ("", None) and str(v) not in ("nan",) else "—"
-                    )
-
-                # Estilo: última fila en negrita
-                def _estilo_total(row):
-                    if row.name == len(tabla_con_total) - 1:
-                        return ["font-weight:bold; background-color:#e8eaf6"] * len(row)
-                    return [""] * len(row)
-
-                styled = (
-                    tabla_con_total.style
-                    .apply(_estilo_total, axis=1)
-                    .set_properties(**{"text-align": "right"})
-                    .set_properties(subset=[labels_tabla["empleado"]], **{"text-align": "left"})
-                    .set_table_styles([
-                        {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f0f2f6"), ("white-space", "nowrap")]},
-                    ])
-                )
-
-                n_filas = len(tabla_con_total)
-                st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
+                html = f"""
+                <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
+                <table style="border-collapse:collapse;font-size:13px;width:100%">
+                <thead style="position:sticky;top:0;z-index:3">
+                <tr>{"".join(ths)}</tr>
+                </thead>
+                <tbody>
+                {"".join(filas_html)}
+                </tbody>
+                </table>
+                </div>
+                """
+                st.markdown(html, unsafe_allow_html=True)
 
     # ── Buscador de trabajador ─────────────────────────────────────────────────
     with subtab_buscar:
