@@ -254,7 +254,7 @@ def _procesar_archivo_rrhh(path, mes: int, anio: int) -> pd.DataFrame:
     # Mapeo flexible por nombre de columna normalizado (acentos/espacios/encoding)
     cols_map = {}
     for c in raw.columns:
-        dest = _COLS_NORM.get(_norm_col(c))
+        dest = _COLS_NORM.get(_norm_key(c)) or _COLS_NORM.get(_norm_col(c))
         if dest and dest not in cols_map.values():
             cols_map[c] = dest
 
