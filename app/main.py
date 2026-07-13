@@ -3,7 +3,8 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import date as _date
 from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pareto
-from processor_rrhh import cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo, diagnostico_rrhh
+from processor_rrhh import (cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo,
+                            diagnostico_rrhh, GRUPOS_DETALLE, LABELS_COLS, COLS_SUBTOTAL, COLS_NUMERICAS_DETALLE)
 from github_loader import (
     EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
     obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
@@ -744,6 +745,195 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
         _render_seccion_flujos(df_deudas, "proveedor", filtro)
 
 
+# ── Libro de Remuneraciones ───────────────────────────────────────────────────
+def _fmt_pesos(v):
+    try:
+        f = float(v)
+        return f"${f:,.0f}" if f != 0 else "—"
+    except Exception:
+        return "—"
+
+
+def _fmt_num_gen(v):
+    """Formatea números genéricos (días, horas, porcentajes)."""
+    try:
+        f = float(v)
+        return f"{f:,.2f}".rstrip("0").rstrip(".") if f != 0 else "—"
+    except Exception:
+        return "—"
+
+
+COLS_PESOS = set(COLS_NUMERICAS_DETALLE) - {
+    "horas_extras_50", "dias_no_trabajados", "dias_ausencia",
+    "dias_licencia", "horas_no_trabajadas", "porcentaje_afp",
+}
+
+
+def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
+    """Renderiza los grupos de campos de un trabajador como secciones con subtotales."""
+    for grupo, campos in GRUPOS_DETALLE.items():
+        presentes = [c for c in campos if c in row.index]
+        if not presentes:
+            continue
+        # Filtrar campos sin valor (0 o vacío) para no ensuciar la tarjeta
+        no_vacios = [c for c in presentes if row.get(c, 0) not in (0, "", None, "—")]
+        if not no_vacios and grupo not in ("👤 Identificación",):
+            continue
+
+        subtotal_cols = COLS_SUBTOTAL.get(grupo, [])
+        subtotal = sum(float(row.get(c, 0) or 0) for c in subtotal_cols if c in row.index)
+
+        encabezado = grupo
+        if subtotal != 0:
+            encabezado += f" — **${subtotal:,.0f}**"
+
+        with st.expander(encabezado, expanded=False):
+            cols_mostrar = no_vacios if no_vacios else presentes
+            n = min(len(cols_mostrar), 4)
+            cols_ui = st.columns(n) if n > 0 else []
+            for i, c in enumerate(cols_mostrar):
+                val = row.get(c, 0)
+                label = LABELS_COLS.get(c, c)
+                if c in COLS_PESOS:
+                    display = _fmt_pesos(val)
+                else:
+                    display = str(val) if val not in (0, "", None) else "—"
+                cols_ui[i % n].metric(label, display)
+
+    # Resultado final
+    liq = float(row.get("liquido", 0) or 0)
+    costo = float(row.get("costo_empresa", 0) or 0)
+    st.markdown(
+        f"<div style='display:flex;gap:2em;padding:0.6em 0 0.2em 0;border-top:1px solid #ddd;margin-top:0.4em'>"
+        f"<span>💵 <b>Líquido a Pagar:</b> <span style='font-size:1.1em'>${liq:,.0f}</span></span>"
+        f"<span>🏢 <b>Costo Empresa:</b> <span style='font-size:1.1em'>${costo:,.0f}</span></span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_libro_remuneraciones(df: pd.DataFrame):
+    if df.empty:
+        st.warning("No hay datos de remuneraciones disponibles.")
+        return
+
+    # Solo desde 2026 en adelante
+    df = df[df["anio"] >= 2026].copy()
+    if df.empty:
+        st.info("No hay datos de remuneraciones para 2026 en adelante.")
+        return
+
+    st.markdown("### 📒 Libro de Remuneraciones")
+
+    subtab_mes, subtab_buscar = st.tabs(["📅 Vista por Mes", "🔍 Buscar Trabajador"])
+
+    # ── Vista por mes ──────────────────────────────────────────────────────────
+    with subtab_mes:
+        orden = st.radio(
+            "Orden",
+            ["Más reciente primero", "Más antiguo primero"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="libro_orden",
+        )
+        ascendente = orden == "Más antiguo primero"
+
+        meses_disponibles = (
+            df[["anio", "mes"]]
+            .drop_duplicates()
+            .sort_values(["anio", "mes"], ascending=ascendente)
+            .values.tolist()
+        )
+
+        for anio, mes in meses_disponibles:
+            df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
+            n_emp = len(df_mes)
+            costo_total = df_mes["costo_empresa"].sum() if "costo_empresa" in df_mes.columns else 0
+            liq_total   = df_mes["liquido"].sum()       if "liquido"       in df_mes.columns else 0
+            nombre_mes  = _nombre_mes(mes)
+
+            with st.expander(
+                f"**{nombre_mes} {anio}** — {n_emp} trabajadores | "
+                f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
+                expanded=False,
+            ):
+                # Fila de totales del mes
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Trabajadores", n_emp)
+                c2.metric("Costo Empresa Total", f"${costo_total:,.0f}")
+                c3.metric("Líquido Total", f"${liq_total:,.0f}")
+
+                st.divider()
+
+                for idx, row in df_mes.iterrows():
+                    nombre = str(row.get("empleado", "")).strip()
+                    liq    = float(row.get("liquido", 0) or 0)
+                    costo  = float(row.get("costo_empresa", 0) or 0)
+                    st.markdown(
+                        f"<div style='padding:0.3em 0 0.1em 0;font-weight:600;font-size:1.05em'>"
+                        f"👤 {nombre}"
+                        f"<span style='font-weight:400;font-size:0.9em;margin-left:1em;color:#555'>"
+                        f"Líquido ${liq:,.0f} · Costo Empresa ${costo:,.0f}</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                    _tarjeta_trabajador(row, key_prefix=f"mes_{anio}_{mes}_{idx}")
+                    st.markdown("<hr style='margin:0.4em 0;border-color:#eee'>", unsafe_allow_html=True)
+
+    # ── Buscador de trabajador ─────────────────────────────────────────────────
+    with subtab_buscar:
+        busqueda = st.text_input(
+            "Buscar trabajador",
+            placeholder="Escribe parte del nombre...",
+            key="libro_busqueda",
+        )
+
+        if not busqueda.strip():
+            st.info("Ingresa parte del nombre del trabajador para ver su historial.")
+            return
+
+        q = busqueda.strip().lower()
+        df_trab = df[df["empleado"].astype(str).str.lower().str.contains(q, na=False)]
+
+        if df_trab.empty:
+            st.warning("No se encontró ningún trabajador con ese nombre.")
+            return
+
+        nombres = df_trab["empleado"].unique().tolist()
+        if len(nombres) > 1:
+            nombre_sel = st.selectbox("Seleccionar trabajador", sorted(nombres), key="libro_sel_trab")
+            df_trab = df_trab[df_trab["empleado"] == nombre_sel]
+        else:
+            nombre_sel = nombres[0]
+
+        st.markdown(f"#### Historial de **{nombre_sel}**")
+
+        df_hist = df_trab.sort_values(["anio", "mes"], ascending=False)
+
+        # Totales acumulados del trabajador
+        total_liq   = df_hist["liquido"].sum()       if "liquido"       in df_hist.columns else 0
+        total_costo = df_hist["costo_empresa"].sum() if "costo_empresa" in df_hist.columns else 0
+        total_imp   = df_hist["impuesto_unico"].sum() if "impuesto_unico" in df_hist.columns else 0
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Líquido Acumulado", f"${total_liq:,.0f}")
+        c2.metric("Costo Empresa Acumulado", f"${total_costo:,.0f}")
+        c3.metric("Impuesto Único Acumulado", f"${total_imp:,.0f}")
+
+        st.divider()
+
+        for idx, row in df_hist.iterrows():
+            nombre_mes_h = _nombre_mes(int(row["mes"]))
+            anio_h       = int(row["anio"])
+            liq_h        = float(row.get("liquido", 0) or 0)
+            costo_h      = float(row.get("costo_empresa", 0) or 0)
+
+            with st.expander(
+                f"**{nombre_mes_h} {anio_h}** — Líquido: ${liq_h:,.0f} | Costo Empresa: ${costo_h:,.0f}",
+                expanded=False,
+            ):
+                _tarjeta_trabajador(row, key_prefix=f"hist_{idx}")
+
+
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
 def _boton_pdf(key, generador_fn, nombre_archivo):
     """Renderiza botón Exportar PDF + descarga."""
@@ -775,8 +965,11 @@ if rol == "gerencia":
         tab_res, tab_v, tab_c = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras"])
         tab_f = None
     tab_r = None
+    tab_libro = None
 else:
-    tab_res, tab_v, tab_c, tab_r, tab_f = st.tabs(["📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH", "💸 Flujos"])
+    tab_res, tab_v, tab_c, tab_r, tab_f, tab_libro = st.tabs([
+        "📋 Resumen", "📈 Ventas", "📉 Compras", "👥 RRHH", "💸 Flujos", "📒 Libro Remuneraciones"
+    ])
 
 with tab_res:
     _boton_pdf(
@@ -827,3 +1020,7 @@ if tab_r is not None:
 if tab_f is not None:
     with tab_f:
         render_flujos(df_cobrar, df_deudas)
+
+if tab_libro is not None:
+    with tab_libro:
+        render_libro_remuneraciones(df_rrhh)

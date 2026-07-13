@@ -16,21 +16,135 @@ MESES_FULL = {
 
 # Columnas del Excel de remuneraciones que nos interesan
 COLS_BASE = {
-    "EMPLEADO":                          "empleado",
-    "CENTRO COSTO":                       "centro_costo",
-    "RENTA IMPONIBLE AFP E ISAPRE":       "renta_imponible",
-    "IMPONIBLE":                          "imponible",
-    "SUELDO BASE":                        "sueldo_base",
-    "GRATIFICACIÓN LEGAL":           "gratificacion",
-    "BONOS":                              "bonos",
-    "NO IMPONIBLE":                       "no_imponible",
-    "MOVILIZACIÓN":                  "movilizacion",
-    "COLACIÓN":                      "colacion",
-    "LÍQUIDO A PAGAR":               "liquido",
-    "SEGURO DE CESANTÍA EMPRESA":    "sc_empresa",
-    "MUTUAL DE SEGURIDAD":                "mutual",
-    "SIS EMPRESA":                        "sis",
-    "ADICIONAL AFP EMPRESA":              "afp_adicional",
+    # Identificación
+    "EMPLEADO":                                          "empleado",
+    "CENTRO COSTO":                                      "centro_costo",
+    "ISAPRE NOMBRE":                                     "isapre_nombre",
+    "AFP NOMBRE":                                        "afp_nombre",
+    "PORCENTAJE AFP":                                    "porcentaje_afp",
+    # Asistencia
+    "HORAS EXTRAS 50":                                   "horas_extras_50",
+    "DIAS NO TRABAJADOS":                                "dias_no_trabajados",
+    "DIAS DE AUSENCIA":                                  "dias_ausencia",
+    "DIAS DE LICENCIA":                                  "dias_licencia",
+    "HORAS NO TRABAJADAS":                               "horas_no_trabajadas",
+    # Haberes imponibles
+    "SUELDO BASE":                                       "sueldo_base",
+    "GRATIFICACION LEGAL":                               "gratificacion",
+    "BONOS":                                             "bonos",
+    "BONO DE PRODUCCION":                                "bono_produccion",
+    "BONO COMERCIAL":                                    "bono_comercial",
+    "OTROS BONOS":                                       "otros_bonos",
+    "AGUINALDO":                                         "aguinaldo",
+    "HORAS EXTRAS":                                      "horas_extras",
+    "COMISIONES POR VENTA":                              "comisiones",
+    "VALOR HORAS NO TRABAJADAS":                         "valor_horas_no_trabajadas",
+    "AJUSTE LEY DE PROTECCION AL EMPLEO":                "ajuste_ley_empleo",
+    # Haberes no imponibles
+    "NO IMPONIBLE":                                      "no_imponible",
+    "MOVILIZACION":                                      "movilizacion",
+    "COLACION":                                          "colacion",
+    "ASIGNACION FAMILIAR":                               "asig_familiar",
+    "ASIGNACION FAMILIAR RETROACTIVA":                   "asig_familiar_retro",
+    "FINIQUITOS":                                        "finiquitos",
+    # Bases de cálculo
+    "RENTA AFECTA":                                      "renta_afecta",
+    "RENTA IMPONIBLE AFP E ISAPRE":                      "renta_imponible",
+    "RENTA IMPONIBLE SEGURO DE CESANTIA":                "renta_imponible_sc",
+    "IMPONIBLE":                                         "imponible",
+    # Descuentos trabajador
+    "DESCUENTOS LEGALES":                                "desc_legales",
+    "SALUD":                                             "desc_salud",
+    "AFP":                                               "desc_afp",
+    "ADICIONAL ISAPRE":                                  "desc_adicional_isapre",
+    "IMPUESTO UNICO":                                    "impuesto_unico",
+    "SEGURO DE CESANTIA TRABAJADOR":                     "sc_trabajador",
+    "ANTICIPOS":                                         "anticipos",
+    "APV INDIVIDUAL":                                    "apv",
+    "COTIZACIONES VOLUNTARIAS":                          "cot_voluntarias",
+    "PRESTAMOS CCAF":                                    "prestamos_ccaf",
+    "LEASING CCAF":                                      "leasing_ccaf",
+    "DESCUENTO DENTAL CCAF":                             "dental_ccaf",
+    "SEGURO DE VIDA CCAF":                               "seguro_vida_ccaf",
+    "OTROS DESCUENTOS CCAF":                             "otros_desc_ccaf",
+    "PRESTAMOS":                                         "prestamos",
+    "PRESTAMOS EMPRESA":                                 "prestamos_empresa",
+    # Aportes empresa
+    "SEGURO DE CESANTIA EMPRESA":                        "sc_empresa",
+    "MUTUAL DE SEGURIDAD":                               "mutual",
+    "SIS EMPRESA":                                       "sis",
+    "ADICIONAL AFP EMPRESA":                             "afp_adicional",
+    "COTIZACION RENTABILIDAD PROTEGIDA":                 "cot_rent_protegida",
+    "COTIZACION ESPERANZA DE VIDA":                      "cot_esperanza_vida",
+    # Resultado
+    "LIQUIDO A PAGAR":                                   "liquido",
+}
+
+# Grupos de columnas para la vista de detalle
+GRUPOS_DETALLE = {
+    "👤 Identificación": ["isapre_nombre", "afp_nombre", "porcentaje_afp", "centro_costo"],
+    "📅 Asistencia": ["dias_no_trabajados", "dias_ausencia", "dias_licencia", "horas_extras_50", "horas_no_trabajadas"],
+    "💰 Haberes Imponibles": ["sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
+                               "otros_bonos", "aguinaldo", "horas_extras", "comisiones",
+                               "valor_horas_no_trabajadas", "ajuste_ley_empleo"],
+    "🚌 Haberes No Imponibles": ["movilizacion", "colacion", "asig_familiar", "asig_familiar_retro", "finiquitos"],
+    "📊 Bases de Cálculo": ["renta_afecta", "renta_imponible", "renta_imponible_sc", "imponible"],
+    "➖ Descuentos Trabajador": ["desc_salud", "desc_afp", "desc_adicional_isapre", "impuesto_unico",
+                                  "sc_trabajador", "anticipos", "apv", "cot_voluntarias",
+                                  "prestamos_ccaf", "leasing_ccaf", "dental_ccaf", "seguro_vida_ccaf",
+                                  "otros_desc_ccaf", "prestamos", "prestamos_empresa"],
+    "🏢 Aportes Empresa": ["sc_empresa", "mutual", "sis", "afp_adicional", "cot_rent_protegida", "cot_esperanza_vida"],
+}
+
+LABELS_COLS = {
+    "isapre_nombre": "Isapre", "afp_nombre": "AFP", "porcentaje_afp": "% AFP", "centro_costo": "Centro Costo",
+    "dias_no_trabajados": "Días no trab.", "dias_ausencia": "Días ausencia", "dias_licencia": "Días licencia",
+    "horas_extras_50": "HH.EE. 50%", "horas_no_trabajadas": "Horas no trab.",
+    "sueldo_base": "Sueldo Base", "gratificacion": "Gratificación", "bonos": "Bonos",
+    "bono_produccion": "Bono Producción", "bono_comercial": "Bono Comercial", "otros_bonos": "Otros Bonos",
+    "aguinaldo": "Aguinaldo", "horas_extras": "Horas Extras", "comisiones": "Comisiones",
+    "valor_horas_no_trabajadas": "Valor HH no trab.", "ajuste_ley_empleo": "Ajuste Ley Empleo",
+    "movilizacion": "Movilización", "colacion": "Colación", "asig_familiar": "Asig. Familiar",
+    "asig_familiar_retro": "Asig. Familiar Retro", "finiquitos": "Finiquitos",
+    "renta_afecta": "Renta Afecta", "renta_imponible": "Renta Imponible AFP/Isapre",
+    "renta_imponible_sc": "Renta Imponible SC", "imponible": "Imponible",
+    "desc_salud": "Salud", "desc_afp": "AFP", "desc_adicional_isapre": "Adicional Isapre",
+    "impuesto_unico": "Impuesto Único", "sc_trabajador": "SC Trabajador",
+    "anticipos": "Anticipos", "apv": "APV", "cot_voluntarias": "Cot. Voluntarias",
+    "prestamos_ccaf": "Préstamos CCAF", "leasing_ccaf": "Leasing CCAF", "dental_ccaf": "Dental CCAF",
+    "seguro_vida_ccaf": "Seguro Vida CCAF", "otros_desc_ccaf": "Otros Desc. CCAF",
+    "prestamos": "Préstamos", "prestamos_empresa": "Préstamos Empresa",
+    "sc_empresa": "SC Empresa", "mutual": "Mutual de Seguridad", "sis": "SIS",
+    "afp_adicional": "AFP Adicional", "cot_rent_protegida": "Cot. Rent. Protegida",
+    "cot_esperanza_vida": "Cot. Esperanza Vida",
+    "liquido": "Líquido a Pagar",
+}
+
+COLS_NUMERICAS_DETALLE = [
+    "horas_extras_50", "dias_no_trabajados", "dias_ausencia", "dias_licencia", "horas_no_trabajadas",
+    "sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial", "otros_bonos",
+    "aguinaldo", "horas_extras", "comisiones", "valor_horas_no_trabajadas", "ajuste_ley_empleo",
+    "movilizacion", "colacion", "asig_familiar", "asig_familiar_retro", "finiquitos",
+    "renta_afecta", "renta_imponible", "renta_imponible_sc", "imponible",
+    "desc_legales", "desc_salud", "desc_afp", "desc_adicional_isapre", "impuesto_unico",
+    "sc_trabajador", "anticipos", "apv", "cot_voluntarias",
+    "prestamos_ccaf", "leasing_ccaf", "dental_ccaf", "seguro_vida_ccaf", "otros_desc_ccaf",
+    "prestamos", "prestamos_empresa",
+    "sc_empresa", "mutual", "sis", "afp_adicional", "cot_rent_protegida", "cot_esperanza_vida",
+    "liquido",
+]
+
+# Columnas que suman como subtotal en cada grupo (solo las monetarias, no días/horas)
+COLS_SUBTOTAL = {
+    "💰 Haberes Imponibles": ["sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
+                               "otros_bonos", "aguinaldo", "horas_extras", "comisiones",
+                               "valor_horas_no_trabajadas", "ajuste_ley_empleo"],
+    "🚌 Haberes No Imponibles": ["movilizacion", "colacion", "asig_familiar", "asig_familiar_retro", "finiquitos"],
+    "➖ Descuentos Trabajador": ["desc_salud", "desc_afp", "desc_adicional_isapre", "impuesto_unico",
+                                  "sc_trabajador", "anticipos", "apv", "cot_voluntarias",
+                                  "prestamos_ccaf", "leasing_ccaf", "dental_ccaf", "seguro_vida_ccaf",
+                                  "otros_desc_ccaf", "prestamos", "prestamos_empresa"],
+    "🏢 Aportes Empresa": ["sc_empresa", "mutual", "sis", "afp_adicional", "cot_rent_protegida", "cot_esperanza_vida"],
 }
 
 def _normalizar_nombre(s: str) -> str:
@@ -120,7 +234,17 @@ def _limpiar_num(serie: pd.Series) -> pd.Series:
 
 
 # Mapa de columnas normalizadas → destino (se calcula una vez)
-_COLS_NORM = {_norm_col(k): v for k, v in COLS_BASE.items()}
+# Normalizamos las claves de COLS_BASE quitando acentos antes de _norm_col
+def _norm_key(s: str) -> str:
+    s = s.upper()
+    for a, b in (("Á","A"),("É","E"),("Í","I"),("Ó","O"),("Ú","U"),("Ñ","N")):
+        s = s.replace(a, b)
+    return re.sub(r"[^A-Z0-9]", "", s)
+
+_COLS_NORM = {_norm_key(k): v for k, v in COLS_BASE.items()}
+
+
+COLS_TEXTO = {"empleado", "centro_costo", "isapre_nombre", "afp_nombre"}
 
 
 def _procesar_archivo_rrhh(path, mes: int, anio: int) -> pd.DataFrame:
@@ -136,22 +260,21 @@ def _procesar_archivo_rrhh(path, mes: int, anio: int) -> pd.DataFrame:
 
     df = raw[list(cols_map.keys())].rename(columns=cols_map)
 
-    # Limpiar numéricos
+    # Limpiar numéricos / texto
     for col in df.columns:
-        if col not in ("empleado", "centro_costo"):
+        if col not in COLS_TEXTO:
             df[col] = _limpiar_num(df[col])
 
     # Eliminar filas sin empleado (totales, vacías)
     if "empleado" in df.columns:
         df = df[df["empleado"].notna() & (df["empleado"].astype(str).str.strip() != "")]
 
-    # costo_empresa = suma directa de RENTA IMPONIBLE AFP E ISAPRE
-    if "renta_imponible" in df.columns:
-        df["costo_empresa"] = df["renta_imponible"]
-    elif "imponible" in df.columns:
-        df["costo_empresa"] = df["imponible"]
-    else:
-        df["costo_empresa"] = 0
+    # costo_empresa = Renta Imponible AFP e Isapre + aportes empresa
+    aportes_cols = ["sc_empresa", "mutual", "sis", "afp_adicional", "cot_rent_protegida", "cot_esperanza_vida"]
+    base = df["renta_imponible"] if "renta_imponible" in df.columns else (
+           df["imponible"]       if "imponible"       in df.columns else pd.Series(0, index=df.index))
+    aportes = sum(df[c] for c in aportes_cols if c in df.columns)
+    df["costo_empresa"] = base + aportes
 
     df["mes"] = mes
     df["anio"] = anio
