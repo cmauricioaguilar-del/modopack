@@ -826,26 +826,29 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
     st.markdown("### 📒 Libro de Remuneraciones")
 
-    subtab_mes, subtab_buscar = st.tabs(["📅 Vista por Mes", "🔍 Buscar Trabajador"])
+    subtab_trab, subtab_libro, subtab_buscar = st.tabs([
+        "👤 Detalle por Trabajador", "📊 Detalle Libro", "🔍 Buscar Trabajador"
+    ])
 
-    # ── Vista por mes ──────────────────────────────────────────────────────────
-    with subtab_mes:
-        orden = st.radio(
-            "Orden",
-            ["Más reciente primero", "Más antiguo primero"],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="libro_orden",
-        )
-        ascendente = orden == "Más antiguo primero"
+    # Orden compartido entre las dos primeras tabs
+    orden = st.radio(
+        "Orden",
+        ["Más reciente primero", "Más antiguo primero"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="libro_orden",
+    )
+    ascendente = orden == "Más antiguo primero"
 
-        meses_disponibles = (
-            df[["anio", "mes"]]
-            .drop_duplicates()
-            .sort_values(["anio", "mes"], ascending=ascendente)
-            .values.tolist()
-        )
+    meses_disponibles = (
+        df[["anio", "mes"]]
+        .drop_duplicates()
+        .sort_values(["anio", "mes"], ascending=ascendente)
+        .values.tolist()
+    )
 
+    # ── Detalle por Trabajador ─────────────────────────────────────────────────
+    with subtab_trab:
         for anio, mes in meses_disponibles:
             df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
             n_emp = len(df_mes)
@@ -858,12 +861,10 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
                 expanded=False,
             ):
-                # Fila de totales del mes
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Trabajadores", n_emp)
                 c2.metric("Costo Empresa Total", f"${costo_total:,.0f}")
                 c3.metric("Líquido Total", f"${liq_total:,.0f}")
-
                 st.divider()
 
                 for idx, row in df_mes.iterrows():
@@ -879,6 +880,86 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                     )
                     _tarjeta_trabajador(row, key_prefix=f"mes_{anio}_{mes}_{idx}")
                     st.markdown("<hr style='margin:0.4em 0;border-color:#eee'>", unsafe_allow_html=True)
+
+    # ── Detalle Libro ──────────────────────────────────────────────────────────
+    with subtab_libro:
+        # Columnas a mostrar en la tabla: todas las numéricas presentes en el df
+        ORDEN_COLS_TABLA = [
+            "empleado",
+            "sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
+            "otros_bonos", "aguinaldo", "horas_extras", "comisiones",
+            "movilizacion", "colacion", "asig_familiar", "finiquitos",
+            "renta_afecta", "renta_imponible", "imponible",
+            "desc_salud", "desc_afp", "desc_adicional_isapre", "impuesto_unico",
+            "sc_trabajador", "anticipos", "apv", "prestamos_ccaf", "otros_desc_ccaf",
+            "prestamos", "prestamos_empresa",
+            "sc_empresa", "mutual", "sis", "afp_adicional",
+            "costo_empresa", "liquido",
+        ]
+
+        cols_tabla = [c for c in ORDEN_COLS_TABLA if c in df.columns]
+        labels_tabla = {c: LABELS_COLS.get(c, c) for c in cols_tabla}
+        labels_tabla["empleado"] = "Empleado"
+
+        for anio, mes in meses_disponibles:
+            df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)].copy()
+            n_emp       = len(df_mes)
+            costo_total = df_mes["costo_empresa"].sum() if "costo_empresa" in df_mes.columns else 0
+            liq_total   = df_mes["liquido"].sum()       if "liquido"       in df_mes.columns else 0
+            nombre_mes  = _nombre_mes(mes)
+
+            with st.expander(
+                f"**{nombre_mes} {anio}** — {n_emp} trabajadores | "
+                f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
+                expanded=False,
+            ):
+                # Construir tabla de trabajadores + fila de totales
+                tabla = df_mes[cols_tabla].copy()
+                tabla = tabla.rename(columns=labels_tabla)
+
+                # Fila de totales
+                fila_total = {}
+                for c, label in labels_tabla.items():
+                    if c == "empleado":
+                        fila_total[label] = "TOTAL"
+                    elif c in df_mes.columns:
+                        try:
+                            fila_total[label] = df_mes[c].sum()
+                        except Exception:
+                            fila_total[label] = ""
+                    else:
+                        fila_total[label] = ""
+
+                tabla_con_total = pd.concat(
+                    [tabla, pd.DataFrame([fila_total])],
+                    ignore_index=True,
+                )
+
+                # Formatear montos como pesos (excepto Empleado)
+                cols_num_label = [labels_tabla[c] for c in cols_tabla if c != "empleado"]
+                for col in cols_num_label:
+                    tabla_con_total[col] = tabla_con_total[col].apply(
+                        lambda v: f"${float(v):,.0f}" if v not in ("", None) and str(v) not in ("nan",) else "—"
+                    )
+
+                # Estilo: última fila en negrita
+                def _estilo_total(row):
+                    if row.name == len(tabla_con_total) - 1:
+                        return ["font-weight:bold; background-color:#e8eaf6"] * len(row)
+                    return [""] * len(row)
+
+                styled = (
+                    tabla_con_total.style
+                    .apply(_estilo_total, axis=1)
+                    .set_properties(**{"text-align": "right"})
+                    .set_properties(subset=[labels_tabla["empleado"]], **{"text-align": "left"})
+                    .set_table_styles([
+                        {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f0f2f6"), ("white-space", "nowrap")]},
+                    ])
+                )
+
+                n_filas = len(tabla_con_total)
+                st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
 
     # ── Buscador de trabajador ─────────────────────────────────────────────────
     with subtab_buscar:
