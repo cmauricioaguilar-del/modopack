@@ -485,7 +485,8 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
             {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f0f2f6")]},
             {"selector": "tr:last-child", "props": [("font-weight", "bold"), ("background-color", "#e8eaf6")]},
         ])
-        st.dataframe(styled, use_container_width=True)
+        n_filas = len(tabla_fmt)
+        st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
 
     # ── Métricas ───────────────────────────────────────────────────────────────
     def _delta(nuevo, viejo):
