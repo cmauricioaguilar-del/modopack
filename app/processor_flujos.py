@@ -31,9 +31,19 @@ def _parse(data, col_names: list[str]) -> pd.DataFrame:
     else:
         df = pd.read_excel(data, header=0)
 
-    if len(df.columns) != len(col_names):
+    n = len(col_names)
+    if len(df.columns) < n:
+        # El archivo tiene menos columnas de las esperadas — no se puede mapear
+        import sys
+        print(
+            f"[flujos] columnas insuficientes: se esperaban {n}, "
+            f"el archivo tiene {len(df.columns)}. Columnas: {list(df.columns)}",
+            file=sys.stderr,
+        )
         return pd.DataFrame()
 
+    # Si hay columnas extra (ej: totales al final), tomar solo las primeras N
+    df = df.iloc[:, :n].copy()
     df.columns = col_names
     entidad_col = col_names[0]
 
