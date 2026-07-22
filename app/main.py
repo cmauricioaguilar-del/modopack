@@ -275,22 +275,25 @@ def get_rrhh(c2025, c2026):
 
 @st.cache_data(show_spinner="Cargando flujos...")
 def get_flujos():
-    """Retorna (df_cobrar, df_deudas, cobrar_encontrado, deudas_encontrado)."""
+    """Retorna (df_cobrar, df_deudas, cobrar_encontrado, deudas_encontrado, diag_cobrar, diag_deudas)."""
     if not EN_RAILWAY:
-        return pd.DataFrame(), pd.DataFrame(), False, False
+        return pd.DataFrame(), pd.DataFrame(), False, False, "no Railway", "no Railway"
     cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
     deudas_bytes  = obtener_archivo_flujos("DEUDAS.xlsx")
-    return (
-        cargar_por_cobrar(cobrar_bytes) if cobrar_bytes else pd.DataFrame(),
-        cargar_deudas(deudas_bytes)     if deudas_bytes  else pd.DataFrame(),
-        cobrar_bytes is not None,
-        deudas_bytes is not None,
-    )
+    if cobrar_bytes:
+        df_cobrar, diag_cobrar = cargar_por_cobrar(cobrar_bytes)
+    else:
+        df_cobrar, diag_cobrar = pd.DataFrame(), "archivo no encontrado en GitHub (POR_COBRAR.xlsx y 'POR COBRAR.xlsx')"
+    if deudas_bytes:
+        df_deudas, diag_deudas = cargar_deudas(deudas_bytes)
+    else:
+        df_deudas, diag_deudas = pd.DataFrame(), "archivo no encontrado en GitHub (DEUDAS.xlsx)"
+    return df_cobrar, df_deudas, cobrar_bytes is not None, deudas_bytes is not None, diag_cobrar, diag_deudas
 
 df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
 df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
 df_rrhh    = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
-df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado = get_flujos()
+df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado, _diag_cobrar, _diag_deudas = get_flujos()
 
 anios_v = sorted(df_ventas["anio"].unique().tolist()) if not df_ventas.empty else []
 anios_c = sorted(df_compras["anio"].unique().tolist()) if not df_compras.empty else []
@@ -705,6 +708,8 @@ def render_flujos(
     df_deudas: pd.DataFrame,
     cobrar_encontrado: bool = True,
     deudas_encontrado: bool = True,
+    diag_cobrar: str = "",
+    diag_deudas: str = "",
 ):
     # Fuente 18px para widgets del tab Flujos
     st.markdown(
@@ -727,17 +732,25 @@ def render_flujos(
             limpiar_cache()
             st.rerun()
     with c1:
-        def _estado(df, encontrado, label):
+        def _estado(df, encontrado):
             if not df.empty:
                 return f"✅ {len(df)} facturas"
             if not encontrado:
-                return f"❌ archivo no encontrado"
-            return f"⚠️ formato inválido"
+                return "❌ archivo no encontrado"
+            return "⚠️ formato inválido"
 
         st.caption(
-            f"Cuentas por Cobrar: {_estado(df_cobrar, cobrar_encontrado, 'cobrar')} | "
-            f"Cuentas por Pagar: {_estado(df_deudas, deudas_encontrado, 'deudas')}"
+            f"Cuentas por Cobrar: {_estado(df_cobrar, cobrar_encontrado)} | "
+            f"Cuentas por Pagar: {_estado(df_deudas, deudas_encontrado)}"
         )
+
+    # Diagnóstico visible cuando hay error (solo admin)
+    if (df_cobrar.empty or df_deudas.empty) and rol == "admin":
+        with st.expander("🔍 Diagnóstico de carga", expanded=False):
+            if df_cobrar.empty:
+                st.error(f"**Cobrar:** {diag_cobrar or 'sin detalle'}")
+            if df_deudas.empty:
+                st.error(f"**Deudas:** {diag_deudas or 'sin detalle'}")
 
     # Buscador único
     filtro = st.text_input(
@@ -1129,7 +1142,7 @@ if tab_r is not None:
 
 if tab_f is not None:
     with tab_f:
-        render_flujos(df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado)
+        render_flujos(df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado, _diag_cobrar, _diag_deudas)
 
 if tab_libro is not None:
     with tab_libro:

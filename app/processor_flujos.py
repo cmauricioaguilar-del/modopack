@@ -23,9 +23,10 @@ _COLS_DEUDAS = [
 ]
 
 
-def _parse(data, col_names: list[str]) -> pd.DataFrame:
+def _parse(data, col_names: list[str]) -> tuple[pd.DataFrame, str]:
+    """Retorna (df, diagnostico). diagnostico es '' si OK, o texto con el error."""
     if data is None:
-        return pd.DataFrame()
+        return pd.DataFrame(), "data es None"
     if isinstance(data, bytes):
         df = pd.read_excel(io.BytesIO(data), header=0)
     else:
@@ -33,14 +34,12 @@ def _parse(data, col_names: list[str]) -> pd.DataFrame:
 
     n = len(col_names)
     if len(df.columns) < n:
-        # El archivo tiene menos columnas de las esperadas — no se puede mapear
-        import sys
-        print(
-            f"[flujos] columnas insuficientes: se esperaban {n}, "
-            f"el archivo tiene {len(df.columns)}. Columnas: {list(df.columns)}",
-            file=sys.stderr,
+        diag = (
+            f"columnas insuficientes: se esperaban {n}, "
+            f"el archivo tiene {len(df.columns)}. "
+            f"Columnas reales: {list(df.columns)}"
         )
-        return pd.DataFrame()
+        return pd.DataFrame(), diag
 
     # Si hay columnas extra (ej: totales al final), tomar solo las primeras N
     df = df.iloc[:, :n].copy()
@@ -57,14 +56,14 @@ def _parse(data, col_names: list[str]) -> pd.DataFrame:
     for col in TRAMOS:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    return df.reset_index(drop=True)
+    return df.reset_index(drop=True), ""
 
 
-def cargar_por_cobrar(data) -> pd.DataFrame:
-    """data: bytes (GitHub) o path (local)."""
+def cargar_por_cobrar(data) -> tuple[pd.DataFrame, str]:
+    """data: bytes (GitHub) o path (local). Retorna (df, diagnostico)."""
     return _parse(data, _COLS_COBRAR)
 
 
-def cargar_deudas(data) -> pd.DataFrame:
-    """data: bytes (GitHub) o path (local)."""
+def cargar_deudas(data) -> tuple[pd.DataFrame, str]:
+    """data: bytes (GitHub) o path (local). Retorna (df, diagnostico)."""
     return _parse(data, _COLS_DEUDAS)
