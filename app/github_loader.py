@@ -131,8 +131,15 @@ def limpiar_cache():
 
 
 def obtener_archivo_flujos(nombre: str) -> bytes | None:
-    """Descarga un archivo de la carpeta flujos/ del repo."""
-    return _descargar_archivo(f"flujos/{nombre}")
+    """Descarga un archivo de la carpeta flujos/ del repo.
+    Intenta primero con guiones bajos y luego con espacios como fallback
+    (archivos subidos antes de la normalización de nombres)."""
+    result = _descargar_archivo(f"flujos/{nombre}")
+    if result is None:
+        alt = nombre.replace("_", " ") if "_" in nombre else nombre.replace(" ", "_")
+        if alt != nombre:
+            result = _descargar_archivo(f"flujos/{alt}")
+    return result
 
 
 def leer_config_flujos() -> dict:

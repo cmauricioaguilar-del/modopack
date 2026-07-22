@@ -275,19 +275,22 @@ def get_rrhh(c2025, c2026):
 
 @st.cache_data(show_spinner="Cargando flujos...")
 def get_flujos():
+    """Retorna (df_cobrar, df_deudas, cobrar_encontrado, deudas_encontrado)."""
     if not EN_RAILWAY:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), False, False
     cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
     deudas_bytes  = obtener_archivo_flujos("DEUDAS.xlsx")
     return (
         cargar_por_cobrar(cobrar_bytes) if cobrar_bytes else pd.DataFrame(),
         cargar_deudas(deudas_bytes)     if deudas_bytes  else pd.DataFrame(),
+        cobrar_bytes is not None,
+        deudas_bytes is not None,
     )
 
 df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
 df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
 df_rrhh    = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
-df_cobrar, df_deudas = get_flujos()
+df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado = get_flujos()
 
 anios_v = sorted(df_ventas["anio"].unique().tolist()) if not df_ventas.empty else []
 anios_c = sorted(df_compras["anio"].unique().tolist()) if not df_compras.empty else []
@@ -697,7 +700,12 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
 
 
-def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
+def render_flujos(
+    df_cobrar: pd.DataFrame,
+    df_deudas: pd.DataFrame,
+    cobrar_encontrado: bool = True,
+    deudas_encontrado: bool = True,
+):
     # Fuente 18px para widgets del tab Flujos
     st.markdown(
         """
@@ -719,9 +727,16 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
             limpiar_cache()
             st.rerun()
     with c1:
+        def _estado(df, encontrado, label):
+            if not df.empty:
+                return f"✅ {len(df)} facturas"
+            if not encontrado:
+                return f"❌ archivo no encontrado"
+            return f"⚠️ formato inválido"
+
         st.caption(
-            f"Cuentas por Cobrar: {'✅ ' + str(len(df_cobrar)) + ' facturas' if not df_cobrar.empty else '❌ sin datos'} | "
-            f"Cuentas por Pagar: {'✅ ' + str(len(df_deudas)) + ' facturas' if not df_deudas.empty else '❌ sin datos'}"
+            f"Cuentas por Cobrar: {_estado(df_cobrar, cobrar_encontrado, 'cobrar')} | "
+            f"Cuentas por Pagar: {_estado(df_deudas, deudas_encontrado, 'deudas')}"
         )
 
     # Buscador único
@@ -1114,7 +1129,7 @@ if tab_r is not None:
 
 if tab_f is not None:
     with tab_f:
-        render_flujos(df_cobrar, df_deudas)
+        render_flujos(df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado)
 
 if tab_libro is not None:
     with tab_libro:
