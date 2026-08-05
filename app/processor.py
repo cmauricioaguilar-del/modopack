@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 from pathlib import Path
 
@@ -126,11 +127,50 @@ def cargar_ventas(carpetas: list) -> pd.DataFrame:
     return pd.concat([df_det, df_48], ignore_index=True)
 
 
+def _procesar_compras(archivos: list) -> pd.DataFrame:
+    """Procesa compras usando el periodo del nombre del archivo (no Fecha Docto)
+    e incluye Monto Exento en el total, como corresponde al RCV del SII."""
+    frames = []
+    for f in archivos:
+        m = re.search(r"(\d{6})\.csv$", Path(f).name)
+        if not m:
+            continue
+        anio, mes = int(m.group(1)[:4]), int(m.group(1)[4:])
+        try:
+            raw = _leer_csv_sii(f)
+            raw.columns = raw.columns.str.strip()
+        except Exception:
+            continue
+
+        cols_presentes = {k: v for k, v in COMPRAS_COLS.items() if k in raw.columns}
+        df = raw[list(cols_presentes.keys())].rename(columns=cols_presentes)
+
+        df["monto_neto"] = _limpiar_monto(df["monto_neto"])
+        if "Monto Exento" in raw.columns:
+            df["monto_neto"] += _limpiar_monto(raw["Monto Exento"])
+
+        df["tipo_doc"] = pd.to_numeric(df["tipo_doc"], errors="coerce")
+        todos_validos = TIPOS_COMPRA_POSITIVOS | TIPOS_COMPRA_NEGATIVOS
+        df = df[df["tipo_doc"].isin(todos_validos)].copy()
+
+        mask_neg = df["tipo_doc"].isin(TIPOS_COMPRA_NEGATIVOS)
+        df.loc[mask_neg, "monto_neto"] *= -1
+
+        df["fecha"] = pd.to_datetime(df["fecha"], dayfirst=True, errors="coerce")
+        df["anio"] = anio
+        df["mes"] = mes
+        frames.append(df)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True).reset_index(drop=True)
+
+
 def cargar_compras(carpetas: list) -> pd.DataFrame:
     archivos = []
     for c in carpetas:
         archivos += sorted(Path(c).glob("RCV_COMPRA_REGISTRO_*.csv"))
-    return _procesar(archivos, COMPRAS_COLS, TIPOS_COMPRA_POSITIVOS, TIPOS_COMPRA_NEGATIVOS)
+    return _procesar_compras(archivos)
 
 
 def resumen_mensual(df: pd.DataFrame, anios: list) -> pd.DataFrame:
