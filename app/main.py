@@ -813,21 +813,19 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
         subtotal = sum(float(row.get(c, 0) or 0) for c in subtotal_cols if c in row.index)
 
         encabezado = grupo
-        if subtotal != 0:
-            encabezado += f" — **${subtotal:,.0f}**"
-
-        with st.expander(encabezado, expanded=False):
-            cols_mostrar = no_vacios if no_vacios else presentes
-            n = min(len(cols_mostrar), 4)
-            cols_ui = st.columns(n) if n > 0 else []
-            for i, c in enumerate(cols_mostrar):
-                val = row.get(c, 0)
-                label = LABELS_COLS.get(c, c)
-                if c in COLS_PESOS:
-                    display = _fmt_pesos(val)
-                else:
-                    display = str(val) if val not in (0, "", None) else "—"
-                cols_ui[i % n].metric(label, display)
+        subtotal_str = f" — ${subtotal:,.0f}" if subtotal != 0 else ""
+        st.markdown(f"**{encabezado}{subtotal_str}**")
+        cols_mostrar = no_vacios if no_vacios else presentes
+        n = min(len(cols_mostrar), 4)
+        cols_ui = st.columns(n) if n > 0 else []
+        for i, c in enumerate(cols_mostrar):
+            val = row.get(c, 0)
+            label = LABELS_COLS.get(c, c)
+            if c in COLS_PESOS:
+                display = _fmt_pesos(val)
+            else:
+                display = str(val) if val not in (0, "", None) else "—"
+            cols_ui[i % n].metric(label, display)
 
     # Resultado final
     liq = float(row.get("liquido", 0) or 0)
@@ -992,7 +990,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
                 <table style="border-collapse:collapse;font-size:13px;width:100%">
                 <thead style="position:sticky;top:0;z-index:3">
-                <tr>{"".join(ths)}</tr>
+                <tr>{""  .join(ths)}</tr>
                 </thead>
                 <tbody>
                 {"".join(filas_html)}
