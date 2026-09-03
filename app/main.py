@@ -24,6 +24,29 @@ USERS = {
     "gerencia": {"clave": "modopack2026", "rol": "gerencia"},
 }
 
+# ── Dialog de subida (definido aquí para que st.dialog lo registre siempre) ──
+@st.dialog("📤 Subir archivos nuevos")
+def _dialog_subir():
+    archivos = st.file_uploader(
+        "Selecciona uno o más archivos SII",
+        accept_multiple_files=True,
+        type=["csv", "xlsx"],
+    )
+    if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
+        resultados = []
+        for f in archivos:
+            ok, msg = subir_archivo(f.name, f.read())
+            resultados.append((ok, msg))
+        for ok, msg in resultados:
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+        if any(ok for ok, _ in resultados):
+            limpiar_cache()
+            st.cache_data.clear()
+            st.rerun()
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
@@ -201,43 +224,11 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Uploader — solo admin en Railway
+    # Botón que abre el dialog de subida — solo admin en Railway
     if EN_RAILWAY and rol == "admin":
         st.divider()
-        st.caption("📤 Subir archivos nuevos")
-
-        def _guardar_archivos():
-            nuevos = st.session_state.get("uploader") or []
-            if nuevos:
-                st.session_state["_archivos_guardados"] = nuevos
-            else:
-                st.session_state.pop("_archivos_guardados", None)
-
-        st.file_uploader(
-            "Selecciona uno o más archivos SII",
-            accept_multiple_files=True,
-            type=["csv", "xlsx"],
-            key="uploader",
-            on_change=_guardar_archivos,
-        )
-
-        archivos = st.session_state.get("_archivos_guardados", [])
-
-        if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
-            resultados = []
-            for f in archivos:
-                ok, msg = subir_archivo(f.name, f.read())
-                resultados.append((ok, msg))
-            st.session_state.pop("_archivos_guardados", None)
-            for ok, msg in resultados:
-                if ok:
-                    st.success(msg)
-                else:
-                    st.error(msg)
-            if any(ok for ok, _ in resultados):
-                limpiar_cache()
-                st.cache_data.clear()
-                st.rerun()
+        if st.button("📤 Subir archivos nuevos", use_container_width=True):
+            _dialog_subir()
 
     # Permisos Gerencia — solo admin
     if rol == "admin":
@@ -647,7 +638,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
         st.info("No hay datos disponibles. Sube el archivo desde ⚙️ Configuración.")
         return
 
-    # Aplicar filtro si hay texto
     if filtro:
         q = filtro.strip().lower()
         mascara = pd.Series(False, index=df.index)
@@ -662,7 +652,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
     totales_gen = {t: df[t].sum() for t in TRAMOS}
     total_gen   = sum(totales_gen.values())
 
-    # Métricas generales
     st.metric("**Total general**", f"${total_gen:,.0f}")
     cols = st.columns(5)
     for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
@@ -670,7 +659,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     st.divider()
 
-    # Totales por entidad, ordenados de mayor a menor
     totales_ent = (
         df.groupby(entidad_col)[TRAMOS]
         .sum()
@@ -710,7 +698,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
                 "mas90":       "Más 90",
             })
             st.dataframe(disp, use_container_width=True, hide_index=True)
-
 
 
 def render_flujos(
@@ -790,7 +777,6 @@ def _fmt_pesos(v):
 
 
 def _fmt_num_gen(v):
-    """Formatea números genéricos (días, horas, porcentajes)."""
     try:
         f = float(v)
         return f"{f:,.2f}".rstrip("0").rstrip(".") if f != 0 else "—"
@@ -805,7 +791,6 @@ COLS_PESOS = set(COLS_NUMERICAS_DETALLE) - {
 
 
 def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
-    """Renderiza los grupos de campos de un trabajador como secciones con subtotales."""
     for grupo, campos in GRUPOS_DETALLE.items():
         presentes = [c for c in campos if c in row.index]
         if not presentes:
@@ -1051,7 +1036,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
 def _boton_pdf(key, generador_fn, nombre_archivo):
-    """Renderiza botón Exportar PDF + descarga."""
     if st.button("🖨️ Exportar PDF", key=f"btn_pdf_{key}", help="Genera un PDF landscape con el contenido de esta pestaña"):
         with st.spinner("Generando PDF..."):
             try:
