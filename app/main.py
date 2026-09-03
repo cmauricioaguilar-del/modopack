@@ -201,30 +201,30 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Uploader — solo admin en Railway
+    # Uploader — solo admin en Railway (sin expander para que el estado persista)
     if EN_RAILWAY and rol == "admin":
         st.divider()
-        with st.expander("📤 Subir archivos nuevos", expanded=False):
-            archivos = st.file_uploader(
-                "Selecciona uno o más archivos SII",
-                accept_multiple_files=True,
-                type=["csv", "xlsx", "CSV", "XLSX"],
-                key="uploader",
-            )
-            if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
-                resultados = []
-                for f in archivos:
-                    ok, msg = subir_archivo(f.name, f.read())
-                    resultados.append((ok, msg))
-                for ok, msg in resultados:
-                    if ok:
-                        st.success(msg)
-                    else:
-                        st.error(msg)
-                if any(ok for ok, _ in resultados):
-                    limpiar_cache()
-                    st.cache_data.clear()
-                    st.rerun()
+        st.caption("📤 Subir archivos nuevos")
+        archivos = st.file_uploader(
+            "Selecciona uno o más archivos SII",
+            accept_multiple_files=True,
+            type=["csv", "xlsx", "CSV", "XLSX"],
+            key="uploader",
+        )
+        if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
+            resultados = []
+            for f in archivos:
+                ok, msg = subir_archivo(f.name, f.read())
+                resultados.append((ok, msg))
+            for ok, msg in resultados:
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+            if any(ok for ok, _ in resultados):
+                limpiar_cache()
+                st.cache_data.clear()
+                st.rerun()
 
     # Permisos Gerencia — solo admin
     if rol == "admin":
@@ -667,7 +667,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     for entidad, row in totales_ent.iterrows():
         total_ent = row["total"]
-        # Cabecera con nombre normal y monto 20% más grande
         st.markdown(
             f"<div style='display:flex;align-items:baseline;gap:0.4em;padding:0.3em 0 0.1em 0'>"
             f"<span style='font-weight:600'>{entidad}</span>"
@@ -676,12 +675,10 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             unsafe_allow_html=True,
         )
         with st.expander("Ver detalle"):
-            # Tramos del grupo
             gcols = st.columns(5)
             for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
                 gcols[i].metric(l, f"${row[t]:,.0f}")
 
-            # Facturas individuales del grupo
             grupo = df[df[entidad_col] == entidad].copy()
             disp_cols = [c for c in ["rut", "vendedor", "num_factura", "emision", "vencimiento"] if c in grupo.columns] + TRAMOS
             disp = grupo[disp_cols].copy()
@@ -711,7 +708,6 @@ def render_flujos(
     diag_cobrar: str = "",
     diag_deudas: str = "",
 ):
-    # Fuente 18px para widgets del tab Flujos
     st.markdown(
         """
         <style>
@@ -724,7 +720,6 @@ def render_flujos(
         """,
         unsafe_allow_html=True,
     )
-    # Fila superior: status + reload
     c1, c2 = st.columns([8, 2])
     with c2:
         if st.button("🔄 Recargar flujos", key="btn_recargar_flujos"):
@@ -744,7 +739,6 @@ def render_flujos(
             f"Cuentas por Pagar: {_estado(df_deudas, deudas_encontrado)}"
         )
 
-    # Diagnóstico visible cuando hay error (solo admin)
     if (df_cobrar.empty or df_deudas.empty) and rol == "admin":
         with st.expander("🔍 Diagnóstico de carga", expanded=False):
             if df_cobrar.empty:
@@ -752,7 +746,6 @@ def render_flujos(
             if df_deudas.empty:
                 st.error(f"**Deudas:** {diag_deudas or 'sin detalle'}")
 
-    # Buscador único
     filtro = st.text_input(
         "🔍 Buscar por cliente, proveedor, N° factura o RUT",
         placeholder="Ej: POLYQUIL, 12345, 76.543.210-1",
@@ -804,7 +797,6 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
         presentes = [c for c in campos if c in row.index]
         if not presentes:
             continue
-        # Filtrar campos sin valor (0 o vacío) para no ensuciar la tarjeta
         no_vacios = [c for c in presentes if row.get(c, 0) not in (0, "", None, "—")]
         if not no_vacios and grupo not in ("👤 Identificación",):
             continue
@@ -827,7 +819,6 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
                 display = str(val) if val not in (0, "", None) else "—"
             cols_ui[i % n].metric(label, display)
 
-    # Resultado final
     liq = float(row.get("liquido", 0) or 0)
     costo = float(row.get("costo_empresa", 0) or 0)
     st.markdown(
@@ -844,7 +835,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         st.warning("No hay datos de remuneraciones disponibles.")
         return
 
-    # Solo desde 2026 en adelante
     df = df[df["anio"] >= 2026].copy()
     if df.empty:
         st.info("No hay datos de remuneraciones para 2026 en adelante.")
@@ -856,7 +846,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         "👤 Detalle por Trabajador", "📊 Detalle Libro", "🔍 Buscar Trabajador"
     ])
 
-    # Orden compartido entre las dos primeras tabs
     orden = st.radio(
         "Orden",
         ["Más reciente primero", "Más antiguo primero"],
@@ -873,7 +862,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         .values.tolist()
     )
 
-    # ── Detalle por Trabajador ─────────────────────────────────────────────────
     with subtab_trab:
         for anio, mes in meses_disponibles:
             df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
@@ -907,9 +895,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                     _tarjeta_trabajador(row, key_prefix=f"mes_{anio}_{mes}_{idx}")
                     st.markdown("<hr style='margin:0.4em 0;border-color:#eee'>", unsafe_allow_html=True)
 
-    # ── Detalle Libro ──────────────────────────────────────────────────────────
     with subtab_libro:
-        # Columnas a mostrar en la tabla: todas las numéricas presentes en el df
         ORDEN_COLS_TABLA = [
             "empleado",
             "sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
@@ -939,7 +925,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
                 expanded=False,
             ):
-                # Construir filas de datos + fila de totales
                 def _fp(v):
                     try:
                         f = float(v)
@@ -959,7 +944,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         celdas.append(f"<td style='padding:4px 10px;{sticky}text-align:{align}'>{txt}</td>")
                     filas_html.append("<tr>" + "".join(celdas) + "</tr>")
 
-                # Fila de totales
                 celdas_total = []
                 for c in cols_tabla:
                     if c == "empleado":
@@ -979,7 +963,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         )
                 filas_html.append("<tr>" + "".join(celdas_total) + "</tr>")
 
-                # Headers
                 ths = []
                 for c, h in zip(cols_tabla, headers):
                     sticky = ("position:sticky;left:0;z-index:2;background:#f0f2f6;" if c == "empleado"
@@ -1000,7 +983,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 """
                 st.markdown(html, unsafe_allow_html=True)
 
-    # ── Buscador de trabajador ─────────────────────────────────────────────────
     with subtab_buscar:
         busqueda = st.text_input(
             "Buscar trabajador",
@@ -1030,7 +1012,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
         df_hist = df_trab.sort_values(["anio", "mes"], ascending=False)
 
-        # Totales acumulados del trabajador
         total_liq   = df_hist["liquido"].sum()       if "liquido"       in df_hist.columns else 0
         total_costo = df_hist["costo_empresa"].sum() if "costo_empresa" in df_hist.columns else 0
         total_imp   = df_hist["impuesto_unico"].sum() if "impuesto_unico" in df_hist.columns else 0
