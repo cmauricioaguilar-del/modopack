@@ -208,7 +208,7 @@ with st.sidebar:
             archivos = st.file_uploader(
                 "Selecciona uno o más archivos SII",
                 accept_multiple_files=True,
-                type=["csv", "xlsx"],
+                type=["csv", "xlsx", "CSV", "XLSX"],
                 key="uploader",
             )
             if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
@@ -990,7 +990,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
                 <table style="border-collapse:collapse;font-size:13px;width:100%">
                 <thead style="position:sticky;top:0;z-index:3">
-                <tr>{""  .join(ths)}</tr>
+                <tr>{"".join(ths)}</tr>
                 </thead>
                 <tbody>
                 {"".join(filas_html)}
