@@ -24,29 +24,6 @@ USERS = {
     "gerencia": {"clave": "modopack2026", "rol": "gerencia"},
 }
 
-# ── Dialog de subida (definido aquí para que st.dialog lo registre siempre) ──
-@st.dialog("📤 Subir archivos nuevos")
-def _dialog_subir():
-    archivos = st.file_uploader(
-        "Selecciona uno o más archivos SII",
-        accept_multiple_files=True,
-        type=["csv", "xlsx"],
-    )
-    if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
-        resultados = []
-        for f in archivos:
-            ok, msg = subir_archivo(f.name, f.read())
-            resultados.append((ok, msg))
-        for ok, msg in resultados:
-            if ok:
-                st.success(msg)
-            else:
-                st.error(msg)
-        if any(ok for ok, _ in resultados):
-            limpiar_cache()
-            st.cache_data.clear()
-            st.rerun()
-
 # ── Login ─────────────────────────────────────────────────────────────────────
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
@@ -66,11 +43,8 @@ if not st.session_state.autenticado:
 
     st.markdown(f"""
     <style>
-    /* Ocultar chrome de Streamlit */
     [data-testid="stHeader"], [data-testid="stToolbar"],
     [data-testid="stDecoration"], #MainMenu {{ display:none !important; }}
-
-    /* Fondo blanco total */
     html, body, [data-testid="stAppViewContainer"],
     [data-testid="stApp"], [data-testid="stMain"] {{
         background: #ffffff !important;
@@ -78,8 +52,6 @@ if not st.session_state.autenticado:
     section[data-testid="stMain"] > div:first-child {{
         padding-top: 0 !important;
     }}
-
-    /* Título fijo arriba-izquierda */
     .titulo-header {{
         position: fixed;
         top: 18px; left: 28px;
@@ -90,16 +62,12 @@ if not st.session_state.autenticado:
         color: #1a6b8a;
         z-index: 9999;
     }}
-
-    /* Centrado vertical del contenido */
     .login-center {{
         display: flex;
         flex-direction: column;
         align-items: center;
         padding-top: 6vh;
     }}
-
-    /* Inputs más grandes y mobile-friendly */
     input[type="text"], input[type="password"] {{
         font-size: 17px !important;
         padding: 12px 16px !important;
@@ -224,12 +192,6 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Botón que abre el dialog de subida — solo admin en Railway
-    if EN_RAILWAY and rol == "admin":
-        st.divider()
-        if st.button("📤 Subir archivos nuevos", use_container_width=True):
-            _dialog_subir()
-
     # Permisos Gerencia — solo admin
     if rol == "admin":
         st.divider()
@@ -279,7 +241,6 @@ def get_rrhh(c2025, c2026):
 
 @st.cache_data(show_spinner="Cargando flujos...")
 def get_flujos():
-    """Retorna (df_cobrar, df_deudas, cobrar_encontrado, deudas_encontrado, diag_cobrar, diag_deudas)."""
     if not EN_RAILWAY:
         return pd.DataFrame(), pd.DataFrame(), False, False, "no Railway", "no Railway"
     cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
@@ -315,6 +276,31 @@ with st.sidebar:
 if not anios_sel:
     st.info("Selecciona al menos un año en el panel lateral.")
     st.stop()
+
+# ── Uploader — solo admin en Railway, en el area principal ────────────────────
+if EN_RAILWAY and rol == "admin":
+    with st.expander("📤 Subir archivos nuevos", expanded=False):
+        _archivos = st.file_uploader(
+            "Selecciona uno o más archivos SII",
+            accept_multiple_files=True,
+            type=["csv", "xlsx"],
+            key="uploader",
+        )
+        if _archivos:
+            if st.button("⬆️ Subir a GitHub", use_container_width=False):
+                _resultados = []
+                for f in _archivos:
+                    ok, msg = subir_archivo(f.name, f.read())
+                    _resultados.append((ok, msg))
+                for ok, msg in _resultados:
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                if any(ok for ok, _ in _resultados):
+                    limpiar_cache()
+                    st.cache_data.clear()
+                    st.rerun()
 
 
 # ── Helpers de visualización ──────────────────────────────────────────────────
@@ -449,13 +435,6 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
     if rol == "admin":
         pv_r = _alinear(pv_r)
 
-    def _variacion(pivot):
-        if len(pivot.columns) < 2:
-            return None
-        a1, a2 = pivot.columns[-2], pivot.columns[-1]
-        var = ((pivot[a2] - pivot[a1]) / pivot[a1].replace(0, float("nan"))) * 100
-        return var
-
     def _tabla_concepto(titulo, pivot, color_neg_es_malo=True):
         st.markdown(f"**{titulo}**")
         tabla = pivot.copy()
@@ -498,7 +477,6 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
         n_filas = len(tabla_fmt)
         st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
 
-    # ── Métricas ───────────────────────────────────────────────────────────────
     def _delta(nuevo, viejo):
         if viejo and viejo != 0:
             return f"{((nuevo - viejo) / abs(viejo)) * 100:+.1f}%"
@@ -539,7 +517,6 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
 
     st.divider()
 
-    # ── Tablas ─────────────────────────────────────────────────────────────────
     if rol == "admin":
         col1, col2, col3, col4 = st.columns(4)
         with col1:
