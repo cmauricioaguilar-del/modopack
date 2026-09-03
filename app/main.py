@@ -278,35 +278,38 @@ if not anios_sel:
     st.stop()
 
 # ── Uploader — solo admin en Railway ─────────────────────────────────────────
-# El file_uploader va directamente en el área principal (sin st.expander ni sidebar).
-# st.expander causa que el widget se resetee a cerrado en cada rerun, vaciando
-# _archivos y dejando el botón siempre deshabilitado.
+# Se usa st.form para que al seleccionar un archivo NO se dispare un rerun.
+# Sin form, el rerun borra el estado del widget y _archivos queda vacío.
 if EN_RAILWAY and rol == "admin":
     st.markdown("**📤 Subir archivos nuevos**")
-    _archivos = st.file_uploader(
-        "Selecciona uno o más archivos SII",
-        accept_multiple_files=True,
-        type=["csv", "xlsx"],
-        key="uploader",
-    )
+
     if "_upload_resultados" in st.session_state:
-        _prev_resultados = st.session_state.pop("_upload_resultados")
-        for ok, msg in _prev_resultados:
+        _prev = st.session_state.pop("_upload_resultados")
+        for ok, msg in _prev:
             if ok:
                 st.success(msg)
             else:
                 st.error(msg)
-    if _archivos:
-        if st.button("⬆️ Subir a GitHub"):
-            _resultados = []
-            for f in _archivos:
-                ok, msg = subir_archivo(f.name, f.read())
-                _resultados.append((ok, msg))
-            st.session_state["_upload_resultados"] = _resultados
-            if any(ok for ok, _ in _resultados):
-                limpiar_cache()
-                st.cache_data.clear()
-            st.rerun()
+
+    with st.form("upload_form", clear_on_submit=True):
+        _archivos = st.file_uploader(
+            "Selecciona uno o más archivos SII",
+            accept_multiple_files=True,
+            type=["csv", "xlsx"],
+        )
+        _submitted = st.form_submit_button("⬆️ Subir a GitHub")
+
+    if _submitted and _archivos:
+        _resultados = []
+        for f in _archivos:
+            ok, msg = subir_archivo(f.name, f.read())
+            _resultados.append((ok, msg))
+        st.session_state["_upload_resultados"] = _resultados
+        if any(ok for ok, _ in _resultados):
+            limpiar_cache()
+            st.cache_data.clear()
+        st.rerun()
+
     st.divider()
 
 
@@ -951,18 +954,16 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                               else "background:#f0f2f6;")
                     ths.append(f"<th style='padding:6px 10px;white-space:nowrap;text-align:center;{sticky}'>{h}</th>")
 
-                html = f"""
-                <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
-                <table style="border-collapse:collapse;font-size:13px;width:100%">
-                <thead style="position:sticky;top:0;z-index:3">
-                <tr>{".".join(ths)}</tr>
-                </thead>
-                <tbody>
-                {"".join(filas_html)}
-                </tbody>
-                </table>
-                </div>
-                """
+                html = (
+                    "<div style='overflow-x:auto;max-height:520px;overflow-y:auto;"
+                    "border:1px solid #e0e0e0;border-radius:6px'>"
+                    "<table style='border-collapse:collapse;font-size:13px;width:100%'>"
+                    "<thead style='position:sticky;top:0;z-index:3'>"
+                    "<tr>" + "".join(ths) + "</tr>"
+                    "</thead><tbody>"
+                    + "".join(filas_html)
+                    + "</tbody></table></div>"
+                )
                 st.markdown(html, unsafe_allow_html=True)
 
     with subtab_buscar:
