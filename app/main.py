@@ -201,21 +201,34 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Uploader — solo admin en Railway (sin expander para que el estado persista)
+    # Uploader — solo admin en Railway
     if EN_RAILWAY and rol == "admin":
         st.divider()
         st.caption("📤 Subir archivos nuevos")
-        archivos = st.file_uploader(
+
+        def _guardar_archivos():
+            nuevos = st.session_state.get("uploader") or []
+            if nuevos:
+                st.session_state["_archivos_guardados"] = nuevos
+            else:
+                st.session_state.pop("_archivos_guardados", None)
+
+        st.file_uploader(
             "Selecciona uno o más archivos SII",
             accept_multiple_files=True,
-            type=["csv", "xlsx", "CSV", "XLSX"],
+            type=["csv", "xlsx"],
             key="uploader",
+            on_change=_guardar_archivos,
         )
+
+        archivos = st.session_state.get("_archivos_guardados", [])
+
         if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
             resultados = []
             for f in archivos:
                 ok, msg = subir_archivo(f.name, f.read())
                 resultados.append((ok, msg))
+            st.session_state.pop("_archivos_guardados", None)
             for ok, msg in resultados:
                 if ok:
                     st.success(msg)
