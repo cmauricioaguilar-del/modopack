@@ -84,6 +84,14 @@ def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     if not carpeta:
         return False, f"No se pudo detectar el tipo de archivo: {nombre}"
 
+    # Para flujos, usar siempre el nombre canónico para que el downloader lo encuentre
+    if carpeta == "flujos":
+        _nn = nombre.upper()
+        if "POR_COBRAR" in _nn:
+            nombre = "POR_COBRAR.xlsx"
+        elif "DEUDAS" in _nn:
+            nombre = "DEUDAS.xlsx"
+
     path_repo = f"{carpeta}/{nombre}"
     url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
 
@@ -128,6 +136,11 @@ def limpiar_cache():
     for d in list(_cache_dirs.values()):
         shutil.rmtree(Path(d).parent, ignore_errors=True)
     _cache_dirs.clear()
+
+
+def listar_flujos() -> list[str]:
+    """Lista los nombres de archivos en la carpeta flujos/ del repo."""
+    return [f["name"] for f in _listar("flujos")]
 
 
 def obtener_archivo_flujos(nombre: str) -> bytes | None:

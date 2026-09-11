@@ -7,7 +7,7 @@ from processor_rrhh import (cargar_rrhh, resumen_mensual_rrhh, ranking_empleados
                             diagnostico_rrhh, GRUPOS_DETALLE, LABELS_COLS, COLS_SUBTOTAL, COLS_NUMERICAS_DETALLE)
 from github_loader import (
     EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
-    obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
+    obtener_archivo_flujos, listar_flujos, leer_config_flujos, guardar_config_flujos,
 )
 from processor_flujos import cargar_por_cobrar, cargar_deudas, TRAMOS, TRAMOS_LABEL
 
@@ -727,11 +727,17 @@ def render_flujos(
         )
 
     if (df_cobrar.empty or df_deudas.empty) and rol == "admin":
-        with st.expander("🔍 Diagnóstico de carga", expanded=False):
+        with st.expander("🔍 Diagnóstico de carga", expanded=True):
             if df_cobrar.empty:
                 st.error(f"**Cobrar:** {diag_cobrar or 'sin detalle'}")
             if df_deudas.empty:
                 st.error(f"**Deudas:** {diag_deudas or 'sin detalle'}")
+            if EN_RAILWAY:
+                _fl = listar_flujos()
+                if _fl:
+                    st.info(f"**Archivos en flujos/ (GitHub):** {', '.join(_fl)}")
+                else:
+                    st.warning("**La carpeta flujos/ en GitHub está vacía o no existe.**")
 
     filtro = st.text_input(
         "🔍 Buscar por cliente, proveedor, N° factura o RUT",
