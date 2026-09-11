@@ -23,6 +23,18 @@ GitHub (modopack-datos) → github_loader.py → carpetas temporales → process
 - Las funciones `get_ventas`, `get_compras`, `get_rrhh`, `get_flujos` usan `@st.cache_data` (sin TTL).
 - El caché se limpia solo cuando el admin sube archivos nuevos o presiona "Recargar datos".
 
+## Reglas de ejecución — CRÍTICO
+
+**Nunca ejecutar cambios en el código sin que el usuario escriba explícitamente la orden.**
+
+- Preguntar "¿Ejecuto?" y no recibir respuesta no es una orden.
+- Que el usuario confirme que el diagnóstico es correcto no es una orden.
+- Que el usuario diga "sí" a una pregunta de diseño o enfoque no es una orden de ejecución.
+- La única orden válida es una instrucción explícita del usuario: "ejecuta", "hazlo", "adelante", "sí, hazlo", etc.
+- En caso de duda, preguntar. Nunca asumir.
+
+---
+
 ## Reglas de trabajo obligatorias
 
 ### Antes de cualquier cambio
