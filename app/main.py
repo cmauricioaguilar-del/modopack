@@ -199,6 +199,7 @@ with st.sidebar:
         if EN_RAILWAY:
             limpiar_cache()
         st.cache_data.clear()
+        st.cache_resource.clear()
         st.rerun()
 
     # Uploader — solo admin en Railway
@@ -224,6 +225,7 @@ with st.sidebar:
                 if any(ok for ok, _ in resultados):
                     limpiar_cache()
                     st.cache_data.clear()
+                    st.cache_resource.clear()
                     st.rerun()
 
     # Permisos Gerencia — solo admin
@@ -255,15 +257,17 @@ with st.sidebar:
 
 
 # ── Carga de datos ────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Cargando ventas...")
+# cache_resource persiste entre sesiones de usuario en el mismo proceso del servidor.
+# Solo se recarga cuando se sube un archivo nuevo (st.cache_resource.clear() + st.rerun()).
+@st.cache_resource
 def get_ventas(c2025, c2026):
     return cargar_ventas([c2025, c2026])
 
-@st.cache_data(show_spinner="Cargando compras...")
+@st.cache_resource
 def get_compras(c2025, c2026):
     return cargar_compras([c2025, c2026])
 
-@st.cache_data(show_spinner="Cargando RRHH...")
+@st.cache_resource
 def get_rrhh(c2025, c2026):
     import pandas as pd
     frames = []
@@ -273,7 +277,7 @@ def get_rrhh(c2025, c2026):
             frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-@st.cache_data(show_spinner="Cargando flujos...")
+@st.cache_resource
 def get_flujos():
     if not EN_RAILWAY:
         return pd.DataFrame(), pd.DataFrame()
