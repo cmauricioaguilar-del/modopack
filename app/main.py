@@ -141,7 +141,8 @@ rol = st.session_state.rol
 
 # ── Config Flujos ─────────────────────────────────────────────────────────────
 if "flujos_config" not in st.session_state:
-    st.session_state.flujos_config = leer_config_flujos() if EN_RAILWAY else {"gerencia_puede_ver": False}
+    st.session_state.flujos_config = (leer_config_flujos() if EN_RAILWAY
+                                      else {"gerencia_puede_ver": False})
 
 st.markdown("""
 <style>
@@ -161,7 +162,9 @@ with st.sidebar:
 
     if EN_RAILWAY:
         st.info("📡 Leyendo datos desde GitHub")
-        _c = carpetas_railway()
+        if "carpetas_railway" not in st.session_state:
+            st.session_state.carpetas_railway = carpetas_railway()
+        _c = st.session_state.carpetas_railway
         carpeta_ventas_2025  = _c["ventas_2025"]
         carpeta_ventas_2026  = _c["ventas_2026"]
         carpeta_compras_2025 = _c["compras_2025"]
@@ -199,6 +202,7 @@ with st.sidebar:
         if EN_RAILWAY:
             limpiar_cache()
         st.cache_data.clear()
+        st.session_state.pop("carpetas_railway", None)
         st.rerun()
 
     # Uploader — solo admin en Railway
@@ -224,6 +228,7 @@ with st.sidebar:
                 if any(ok for ok, _ in resultados):
                     limpiar_cache()
                     st.cache_data.clear()
+                    st.session_state.pop("carpetas_railway", None)
                     st.rerun()
 
     # Permisos Gerencia — solo admin
