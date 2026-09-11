@@ -787,18 +787,23 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
         if subtotal != 0:
             encabezado += f" — **${subtotal:,.0f}**"
 
-        with st.expander(encabezado, expanded=False):
-            cols_mostrar = no_vacios if no_vacios else presentes
-            n = min(len(cols_mostrar), 4)
-            cols_ui = st.columns(n) if n > 0 else []
-            for i, c in enumerate(cols_mostrar):
-                val = row.get(c, 0)
-                label = LABELS_COLS.get(c, c)
-                if c in COLS_PESOS:
-                    display = _fmt_pesos(val)
-                else:
-                    display = str(val) if val not in (0, "", None) else "—"
-                cols_ui[i % n].metric(label, display)
+        st.markdown(
+            f"<div style='font-weight:600;font-size:0.95em;margin-top:0.6em;"
+            f"border-left:3px solid #4a90d9;padding-left:0.5em;color:#333'>"
+            f"{encabezado}</div>",
+            unsafe_allow_html=True,
+        )
+        cols_mostrar = no_vacios if no_vacios else presentes
+        n = min(len(cols_mostrar), 4)
+        cols_ui = st.columns(n) if n > 0 else []
+        for i, c in enumerate(cols_mostrar):
+            val = row.get(c, 0)
+            label = LABELS_COLS.get(c, c)
+            if c in COLS_PESOS:
+                display = _fmt_pesos(val)
+            else:
+                display = str(val) if val not in (0, "", None) else "—"
+            cols_ui[i % n].metric(label, display)
 
     # Resultado final
     liq = float(row.get("liquido", 0) or 0)
