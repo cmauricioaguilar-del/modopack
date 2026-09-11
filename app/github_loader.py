@@ -12,7 +12,6 @@ from pathlib import Path
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = "cmauricioaguilar-del/modopack-datos"
 BRANCH = "main"
-RAW_BASE = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}"
 API_BASE = f"https://api.github.com/repos/{REPO}/contents"
 
 EN_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
@@ -30,8 +29,7 @@ def _listar(carpeta: str) -> list[dict]:
 
 
 def _descargar_archivo(path_repo: str) -> bytes | None:
-    """Descarga el contenido de un archivo vía API autenticada (evita el CDN de raw,
-    que puede entregar versiones obsoletas justo después de subir)."""
+    """Descarga el contenido de un archivo vía API autenticada."""
     r = requests.get(
         f"{API_BASE}/{path_repo}",
         params={"ref": BRANCH},
@@ -52,8 +50,11 @@ def _descargar_carpeta(carpeta_repo: str, destino: Path):
             (destino / f["name"]).write_bytes(contenido)
 
 
+# ── Detección de destino ───────────────────────────────────────────────────────
+
 def detectar_destino(nombre: str) -> str | None:
     """Detecta la carpeta destino en el repo según el nombre del archivo."""
+    import re
     n = nombre.upper()
     if "RCV_VENTA_" in n and n.endswith(".CSV"):
         anio = nombre[-10:-4][:4]
@@ -70,21 +71,23 @@ def detectar_destino(nombre: str) -> str | None:
             or ("DEUDAS" in _nn and _nn.endswith(".XLSX") and "RCV" not in _nn)):
         return "flujos"
     if n.endswith(".XLSX"):
-        import re
         m = re.search(r"(20\d{2})", nombre)
         anio = m.group(1) if m else "2026"
         return f"rrhh/{anio}"
     return None
 
 
+# ── Subir / borrar ─────────────────────────────────────────────────────────────
+
 def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     """Sube o reemplaza un archivo en modopack-datos. Retorna (ok, mensaje)."""
-    nombre = nombre.replace(" ", "_")  # normalizar: espacios → guiones bajos
+    import base64 as _b64
+    nombre = nombre.replace(" ", "_")
     carpeta = detectar_destino(nombre)
     if not carpeta:
         return False, f"No se pudo detectar el tipo de archivo: {nombre}"
 
-    # Para flujos, usar siempre el nombre canónico para que el downloader lo encuentre
+    # Flujos: guardar siempre con nombre canónico para que el downloader lo encuentre
     if carpeta == "flujos":
         _nn = nombre.upper()
         if "POR_COBRAR" in _nn:
@@ -95,11 +98,9 @@ def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     path_repo = f"{carpeta}/{nombre}"
     url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
 
-    # Obtener SHA si el archivo ya existe (para actualizarlo)
     r = requests.get(url, headers=_headers(), timeout=15)
     sha = r.json().get("sha") if r.status_code == 200 else None
 
-    import base64 as _b64
     payload = {
         "message": f"update {nombre}",
         "content": _b64.b64encode(contenido_bytes).decode(),
@@ -112,8 +113,38 @@ def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     if r.status_code in (200, 201):
         accion = "actualizado" if sha else "agregado"
         return True, f"✅ {nombre} {accion} en `{carpeta}/`"
-    return False, f"❌ Error subiendo {nombre}: {r.json().get('message','')}"
+    return False, f"❌ Error subiendo {nombre}: {r.json().get('message', '')}"
 
+
+def borrar_archivo(path_repo: str, sha: str) -> tuple[bool, str]:
+    """Borra un archivo de modopack-datos. Retorna (ok, mensaje)."""
+    nombre = path_repo.split("/")[-1]
+    url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
+    payload = {
+        "message": f"delete {nombre}",
+        "sha": sha,
+        "branch": BRANCH,
+    }
+    r = requests.delete(url, headers=_headers(), json=payload, timeout=15)
+    if r.status_code == 200:
+        return True, f"✅ {nombre} eliminado de `{'/'.join(path_repo.split('/')[:-1])}/`"
+    return False, f"❌ Error al eliminar {nombre}: {r.json().get('message', '')}"
+
+
+# ── Listado de archivos ────────────────────────────────────────────────────────
+
+def listar_archivos_carpeta(carpeta: str) -> list[dict]:
+    """Lista archivos en una carpeta del repo con name, path y sha."""
+    return [{"name": f["name"], "path": f["path"], "sha": f["sha"]}
+            for f in _listar(carpeta)]
+
+
+def listar_flujos() -> list[str]:
+    """Lista los nombres de archivos en la carpeta flujos/ del repo."""
+    return [f["name"] for f in _listar("flujos")]
+
+
+# ── Caché de carpetas locales ──────────────────────────────────────────────────
 
 _cache_dirs: dict[str, str] = {}
 
@@ -122,8 +153,6 @@ def obtener_carpeta(carpeta_repo: str) -> str:
     """Retorna path local con los archivos descargados (con cache en memoria)."""
     if carpeta_repo in _cache_dirs:
         return _cache_dirs[carpeta_repo]
-    # Conservar el año en la ruta local (p.ej. .../rrhh_2025) para que los
-    # archivos sin año en el nombre puedan deducirlo desde la carpeta.
     tmp = Path(tempfile.mkdtemp()) / carpeta_repo.replace("/", "_")
     _descargar_carpeta(carpeta_repo, tmp)
     _cache_dirs[carpeta_repo] = str(tmp)
@@ -131,22 +160,23 @@ def obtener_carpeta(carpeta_repo: str) -> str:
 
 
 def limpiar_cache():
-    """Borra las carpetas descargadas para forzar una re-descarga desde GitHub.
-    Necesario porque st.cache_data.clear() no limpia este cache en memoria."""
+    """Borra las carpetas descargadas para forzar una re-descarga desde GitHub."""
     for d in list(_cache_dirs.values()):
         shutil.rmtree(Path(d).parent, ignore_errors=True)
     _cache_dirs.clear()
 
 
-def listar_flujos() -> list[str]:
-    """Lista los nombres de archivos en la carpeta flujos/ del repo."""
-    return [f["name"] for f in _listar("flujos")]
+def limpiar_cache_carpeta(carpeta_repo: str):
+    """Borra solo la carpeta local de una carpeta específica del repo."""
+    if carpeta_repo in _cache_dirs:
+        shutil.rmtree(Path(_cache_dirs[carpeta_repo]).parent, ignore_errors=True)
+        del _cache_dirs[carpeta_repo]
 
+
+# ── Flujos ─────────────────────────────────────────────────────────────────────
 
 def obtener_archivo_flujos(nombre: str) -> bytes | None:
-    """Descarga un archivo de la carpeta flujos/ del repo.
-    Intenta primero con guiones bajos y luego con espacios como fallback
-    (archivos subidos antes de la normalización de nombres)."""
+    """Descarga un archivo de la carpeta flujos/. Intenta con guión bajo y con espacio."""
     result = _descargar_archivo(f"flujos/{nombre}")
     if result is None:
         alt = nombre.replace("_", " ") if "_" in nombre else nombre.replace(" ", "_")
@@ -155,11 +185,13 @@ def obtener_archivo_flujos(nombre: str) -> bytes | None:
     return result
 
 
+# ── Config flujos ──────────────────────────────────────────────────────────────
+
 def leer_config_flujos() -> dict:
     """Lee config/flujos.json del repo. Retorna defaults si no existe."""
+    import json
     contenido = _descargar_archivo("config/flujos.json")
     if contenido:
-        import json
         try:
             return json.loads(contenido)
         except Exception:
@@ -168,15 +200,13 @@ def leer_config_flujos() -> dict:
 
 
 def guardar_config_flujos(config: dict) -> bool:
-    """Guarda config/flujos.json en el repo. Retorna True si OK."""
+    """Guarda config/flujos.json en el repo."""
     import json
     import base64 as _b64
-
     path_repo = "config/flujos.json"
     url = f"https://api.github.com/repos/{REPO}/contents/{path_repo}"
     r = requests.get(url, headers=_headers(), timeout=15)
     sha = r.json().get("sha") if r.status_code == 200 else None
-
     payload = {
         "message": "update flujos config",
         "content": _b64.b64encode(json.dumps(config).encode()).decode(),
@@ -184,10 +214,11 @@ def guardar_config_flujos(config: dict) -> bool:
     }
     if sha:
         payload["sha"] = sha
-
     r = requests.put(url, headers=_headers(), json=payload, timeout=30)
     return r.status_code in (200, 201)
 
+
+# ── Bootstrap Railway ──────────────────────────────────────────────────────────
 
 def carpetas_railway() -> dict:
     """Retorna dict con todas las carpetas descargadas desde GitHub."""

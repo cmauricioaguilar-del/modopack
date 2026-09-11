@@ -6,8 +6,9 @@ from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pa
 from processor_rrhh import (cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo,
                             diagnostico_rrhh, GRUPOS_DETALLE, LABELS_COLS, COLS_SUBTOTAL, COLS_NUMERICAS_DETALLE)
 from github_loader import (
-    EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
-    obtener_archivo_flujos, listar_flujos, leer_config_flujos, guardar_config_flujos,
+    EN_RAILWAY, carpetas_railway, subir_archivo, borrar_archivo, limpiar_cache,
+    limpiar_cache_carpeta, listar_archivos_carpeta, listar_flujos,
+    obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
 )
 from processor_flujos import cargar_por_cobrar, cargar_deudas, TRAMOS, TRAMOS_LABEL
 
@@ -308,7 +309,48 @@ if EN_RAILWAY and rol == "admin":
         if any(ok for ok, _ in _resultados):
             limpiar_cache()
             st.cache_data.clear()
-        st.rerun()
+            st.rerun()
+
+    # ── Gestor de archivos GitHub (solo admin) ────────────────────────────────
+    st.markdown("**🗂️ Gestionar archivos en GitHub**")
+    _CARPETAS_GESTION = [
+        "rrhh/2026", "rrhh/2025",
+        "flujos",
+        "ventas/2026", "ventas/2025",
+        "compras/2026", "compras/2025",
+    ]
+    _carpeta_sel = st.selectbox(
+        "Ver carpeta",
+        _CARPETAS_GESTION,
+        key="gestion_carpeta_sel",
+        label_visibility="collapsed",
+    )
+    if st.button("🔄 Listar archivos", key="btn_listar_archivos", use_container_width=True):
+        st.session_state["_archivos_listados"] = listar_archivos_carpeta(_carpeta_sel)
+        st.session_state["_carpeta_listada"] = _carpeta_sel
+
+    _arch_list = st.session_state.get("_archivos_listados", [])
+    _carp_list  = st.session_state.get("_carpeta_listada", "")
+    if _arch_list and _carp_list == _carpeta_sel:
+        for _a in _arch_list:
+            _c1, _c2 = st.columns([5, 1])
+            _c1.caption(_a["name"])
+            if _c2.button("🗑️", key=f"del_{_a['path']}", help=f"Borrar {_a['name']}"):
+                _ok, _msg = borrar_archivo(_a["path"], _a["sha"])
+                if _ok:
+                    # Invalidar caché solo de la carpeta afectada
+                    _repo_folder = "/".join(_a["path"].split("/")[:-1])
+                    limpiar_cache_carpeta(_repo_folder)
+                    st.cache_data.clear()
+                    st.session_state.pop("_archivos_listados", None)
+                    st.success(_msg)
+                    st.rerun()
+                else:
+                    st.error(_msg)
+    elif _arch_list and _carp_list != _carpeta_sel:
+        st.caption("Haz clic en 'Listar archivos' para ver esta carpeta.")
+    elif _carp_list == _carpeta_sel and "btn_listar_archivos" in str(st.session_state):
+        st.caption("Carpeta vacía.")
 
     st.divider()
 
@@ -711,7 +753,6 @@ def render_flujos(
     with c2:
         if st.button("🔄 Recargar flujos", key="btn_recargar_flujos"):
             get_flujos.clear()
-            limpiar_cache()
             st.rerun()
     with c1:
         def _estado(df, encontrado):
@@ -826,34 +867,28 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         st.warning("No hay datos de remuneraciones disponibles.")
         return
 
-    df = df[df["anio"] >= 2026].copy()
-    if df.empty:
-        st.info("No hay datos de remuneraciones para 2026 en adelante.")
-        return
-
     st.markdown("### 📒 Libro de Remuneraciones")
 
     subtab_trab, subtab_libro, subtab_buscar = st.tabs([
         "👤 Detalle por Trabajador", "📊 Detalle Libro", "🔍 Buscar Trabajador"
     ])
 
-    orden = st.radio(
-        "Orden",
-        ["Más reciente primero", "Más antiguo primero"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="libro_orden",
-    )
-    ascendente = orden == "Más antiguo primero"
-
-    meses_disponibles = (
-        df[["anio", "mes"]]
-        .drop_duplicates()
-        .sort_values(["anio", "mes"], ascending=ascendente)
-        .values.tolist()
-    )
-
     with subtab_trab:
+        orden = st.radio(
+            "Orden",
+            ["Más reciente primero", "Más antiguo primero"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="libro_orden",
+        )
+        ascendente = orden == "Más antiguo primero"
+
+        meses_disponibles = (
+            df[["anio", "mes"]]
+            .drop_duplicates()
+            .sort_values(["anio", "mes"], ascending=ascendente)
+            .values.tolist()
+        )
         for anio, mes in meses_disponibles:
             df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
             n_emp = len(df_mes)

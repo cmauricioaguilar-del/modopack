@@ -177,11 +177,13 @@ def _mes_anio_desde_nombre(nombre: str, carpeta: str = ""):
             if re.search(rf"(?<![A-Z]){ab}", n):
                 mes = num
                 break
-    # 3) Número de mes al inicio del nombre (04 REM ...)
+    # 3) Número de mes en cualquier posición del nombre (04 REM ..., REM 04 ...)
     if mes is None:
-        m_num = re.match(r"(\d{1,2})\b", n)
-        if m_num and 1 <= int(m_num.group(1)) <= 12:
-            mes = int(m_num.group(1))
+        for m_num in re.finditer(r"(?<!\d)(\d{1,2})(?!\d)", n):
+            val = int(m_num.group(1))
+            if 1 <= val <= 12:
+                mes = val
+                break
 
     # Año: 4 dígitos en el nombre tiene prioridad
     anio = None
@@ -282,7 +284,9 @@ def _procesar_archivo_rrhh(path, mes: int, anio: int) -> pd.DataFrame:
 
 
 def cargar_rrhh(carpeta: str) -> pd.DataFrame:
-    frames = []
+    # Usamos dict para deduplicar: si dos archivos mapean al mismo (mes, anio),
+    # el último en orden alfabético gana (el admin debe borrar el erróneo via UI).
+    por_periodo: dict[tuple, pd.DataFrame] = {}
     for f in sorted(Path(carpeta).glob("*.xlsx")):
         mes, anio = _mes_anio_desde_nombre(f.name, str(f.parent))
         if not mes or not anio:
@@ -292,12 +296,12 @@ def cargar_rrhh(carpeta: str) -> pd.DataFrame:
         except Exception:
             continue
         if not df.empty:
-            frames.append(df)
+            por_periodo[(mes, anio)] = df  # sobrescribe duplicados
 
-    if not frames:
+    if not por_periodo:
         return pd.DataFrame()
 
-    return pd.concat(frames, ignore_index=True)
+    return pd.concat(por_periodo.values(), ignore_index=True)
 
 
 def diagnostico_rrhh(carpetas: list) -> pd.DataFrame:
