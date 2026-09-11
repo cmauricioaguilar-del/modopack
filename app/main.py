@@ -279,10 +279,9 @@ def get_flujos():
         return pd.DataFrame(), pd.DataFrame()
     cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
     deudas_bytes  = obtener_archivo_flujos("DEUDAS.xlsx")
-    return (
-        cargar_por_cobrar(cobrar_bytes) if cobrar_bytes else pd.DataFrame(),
-        cargar_deudas(deudas_bytes)     if deudas_bytes  else pd.DataFrame(),
-    )
+    df_cobrar = cargar_por_cobrar(cobrar_bytes)[0] if cobrar_bytes else pd.DataFrame()
+    df_deudas = cargar_deudas(deudas_bytes)[0]     if deudas_bytes  else pd.DataFrame()
+    return df_cobrar, df_deudas
 
 df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
 df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
