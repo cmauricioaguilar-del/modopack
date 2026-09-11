@@ -6,8 +6,7 @@ from processor import cargar_ventas, cargar_compras, resumen_mensual, ranking_pa
 from processor_rrhh import (cargar_rrhh, resumen_mensual_rrhh, ranking_empleados, resumen_por_centro_costo,
                             diagnostico_rrhh, GRUPOS_DETALLE, LABELS_COLS, COLS_SUBTOTAL, COLS_NUMERICAS_DETALLE)
 from github_loader import (
-    EN_RAILWAY, carpetas_railway, subir_archivo, borrar_archivo, limpiar_cache,
-    limpiar_cache_carpeta, listar_archivos_carpeta, listar_flujos,
+    EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
     obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
 )
 from processor_flujos import cargar_por_cobrar, cargar_deudas, TRAMOS, TRAMOS_LABEL
@@ -44,8 +43,11 @@ if not st.session_state.autenticado:
 
     st.markdown(f"""
     <style>
+    /* Ocultar chrome de Streamlit */
     [data-testid="stHeader"], [data-testid="stToolbar"],
     [data-testid="stDecoration"], #MainMenu {{ display:none !important; }}
+
+    /* Fondo blanco total */
     html, body, [data-testid="stAppViewContainer"],
     [data-testid="stApp"], [data-testid="stMain"] {{
         background: #ffffff !important;
@@ -53,6 +55,8 @@ if not st.session_state.autenticado:
     section[data-testid="stMain"] > div:first-child {{
         padding-top: 0 !important;
     }}
+
+    /* Título fijo arriba-izquierda */
     .titulo-header {{
         position: fixed;
         top: 18px; left: 28px;
@@ -63,12 +67,16 @@ if not st.session_state.autenticado:
         color: #1a6b8a;
         z-index: 9999;
     }}
+
+    /* Centrado vertical del contenido */
     .login-center {{
         display: flex;
         flex-direction: column;
         align-items: center;
         padding-top: 6vh;
     }}
+
+    /* Inputs más grandes y mobile-friendly */
     input[type="text"], input[type="password"] {{
         font-size: 17px !important;
         padding: 12px 16px !important;
@@ -193,6 +201,31 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+    # Uploader — solo admin en Railway
+    if EN_RAILWAY and rol == "admin":
+        st.divider()
+        with st.expander("📤 Subir archivos nuevos", expanded=False):
+            archivos = st.file_uploader(
+                "Selecciona uno o más archivos SII",
+                accept_multiple_files=True,
+                type=["csv", "xlsx"],
+                key="uploader",
+            )
+            if st.button("⬆️ Subir a GitHub", use_container_width=True, disabled=not archivos):
+                resultados = []
+                for f in archivos:
+                    ok, msg = subir_archivo(f.name, f.read())
+                    resultados.append((ok, msg))
+                for ok, msg in resultados:
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                if any(ok for ok, _ in resultados):
+                    limpiar_cache()
+                    st.cache_data.clear()
+                    st.rerun()
+
     # Permisos Gerencia — solo admin
     if rol == "admin":
         st.divider()
@@ -243,23 +276,18 @@ def get_rrhh(c2025, c2026):
 @st.cache_data(show_spinner="Cargando flujos...")
 def get_flujos():
     if not EN_RAILWAY:
-        return pd.DataFrame(), pd.DataFrame(), False, False, "no Railway", "no Railway"
+        return pd.DataFrame(), pd.DataFrame()
     cobrar_bytes = obtener_archivo_flujos("POR_COBRAR.xlsx")
     deudas_bytes  = obtener_archivo_flujos("DEUDAS.xlsx")
-    if cobrar_bytes:
-        df_cobrar, diag_cobrar = cargar_por_cobrar(cobrar_bytes)
-    else:
-        df_cobrar, diag_cobrar = pd.DataFrame(), "archivo no encontrado en GitHub (POR_COBRAR.xlsx y 'POR COBRAR.xlsx')"
-    if deudas_bytes:
-        df_deudas, diag_deudas = cargar_deudas(deudas_bytes)
-    else:
-        df_deudas, diag_deudas = pd.DataFrame(), "archivo no encontrado en GitHub (DEUDAS.xlsx)"
-    return df_cobrar, df_deudas, cobrar_bytes is not None, deudas_bytes is not None, diag_cobrar, diag_deudas
+    return (
+        cargar_por_cobrar(cobrar_bytes) if cobrar_bytes else pd.DataFrame(),
+        cargar_deudas(deudas_bytes)     if deudas_bytes  else pd.DataFrame(),
+    )
 
 df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
 df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
 df_rrhh    = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
-df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado, _diag_cobrar, _diag_deudas = get_flujos()
+df_cobrar, df_deudas = get_flujos()
 
 anios_v = sorted(df_ventas["anio"].unique().tolist()) if not df_ventas.empty else []
 anios_c = sorted(df_compras["anio"].unique().tolist()) if not df_compras.empty else []
@@ -277,82 +305,6 @@ with st.sidebar:
 if not anios_sel:
     st.info("Selecciona al menos un año en el panel lateral.")
     st.stop()
-
-# ── Uploader — solo admin en Railway ─────────────────────────────────────────
-# Se usa st.form para que al seleccionar un archivo NO se dispare un rerun.
-# Sin form, el rerun borra el estado del widget y _archivos queda vacío.
-if EN_RAILWAY and rol == "admin":
-    st.markdown("**📤 Subir archivos nuevos**")
-
-    if "_upload_resultados" in st.session_state:
-        _prev = st.session_state.pop("_upload_resultados")
-        for ok, msg in _prev:
-            if ok:
-                st.success(msg)
-            else:
-                st.error(msg)
-
-    with st.form("upload_form", clear_on_submit=True):
-        _archivos = st.file_uploader(
-            "Selecciona uno o más archivos SII",
-            accept_multiple_files=True,
-            type=["csv", "xlsx"],
-        )
-        _submitted = st.form_submit_button("⬆️ Subir a GitHub")
-
-    if _submitted and _archivos:
-        _resultados = []
-        for f in _archivos:
-            ok, msg = subir_archivo(f.name, f.read())
-            _resultados.append((ok, msg))
-        st.session_state["_upload_resultados"] = _resultados
-        if any(ok for ok, _ in _resultados):
-            limpiar_cache()
-            st.cache_data.clear()
-            st.rerun()
-
-    # ── Gestor de archivos GitHub (solo admin) ────────────────────────────────
-    st.markdown("**🗂️ Gestionar archivos en GitHub**")
-    _CARPETAS_GESTION = [
-        "rrhh/2026", "rrhh/2025",
-        "flujos",
-        "ventas/2026", "ventas/2025",
-        "compras/2026", "compras/2025",
-    ]
-    _carpeta_sel = st.selectbox(
-        "Ver carpeta",
-        _CARPETAS_GESTION,
-        key="gestion_carpeta_sel",
-        label_visibility="collapsed",
-    )
-    if st.button("🔄 Listar archivos", key="btn_listar_archivos", use_container_width=True):
-        st.session_state["_archivos_listados"] = listar_archivos_carpeta(_carpeta_sel)
-        st.session_state["_carpeta_listada"] = _carpeta_sel
-
-    _arch_list = st.session_state.get("_archivos_listados", [])
-    _carp_list  = st.session_state.get("_carpeta_listada", "")
-    if _arch_list and _carp_list == _carpeta_sel:
-        for _a in _arch_list:
-            _c1, _c2 = st.columns([5, 1])
-            _c1.caption(_a["name"])
-            if _c2.button("🗑️", key=f"del_{_a['path']}", help=f"Borrar {_a['name']}"):
-                _ok, _msg = borrar_archivo(_a["path"], _a["sha"])
-                if _ok:
-                    # Invalidar caché solo de la carpeta afectada
-                    _repo_folder = "/".join(_a["path"].split("/")[:-1])
-                    limpiar_cache_carpeta(_repo_folder)
-                    st.cache_data.clear()
-                    st.session_state.pop("_archivos_listados", None)
-                    st.success(_msg)
-                    st.rerun()
-                else:
-                    st.error(_msg)
-    elif _arch_list and _carp_list != _carpeta_sel:
-        st.caption("Haz clic en 'Listar archivos' para ver esta carpeta.")
-    elif _carp_list == _carpeta_sel and "btn_listar_archivos" in str(st.session_state):
-        st.caption("Carpeta vacía.")
-
-    st.divider()
 
 
 # ── Helpers de visualización ──────────────────────────────────────────────────
@@ -487,6 +439,13 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
     if rol == "admin":
         pv_r = _alinear(pv_r)
 
+    def _variacion(pivot):
+        if len(pivot.columns) < 2:
+            return None
+        a1, a2 = pivot.columns[-2], pivot.columns[-1]
+        var = ((pivot[a2] - pivot[a1]) / pivot[a1].replace(0, float("nan"))) * 100
+        return var
+
     def _tabla_concepto(titulo, pivot, color_neg_es_malo=True):
         st.markdown(f"**{titulo}**")
         tabla = pivot.copy()
@@ -529,6 +488,7 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
         n_filas = len(tabla_fmt)
         st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
 
+    # ── Métricas ───────────────────────────────────────────────────────────────
     def _delta(nuevo, viejo):
         if viejo and viejo != 0:
             return f"{((nuevo - viejo) / abs(viejo)) * 100:+.1f}%"
@@ -569,6 +529,7 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
 
     st.divider()
 
+    # ── Tablas ─────────────────────────────────────────────────────────────────
     if rol == "admin":
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -667,6 +628,7 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
         st.info("No hay datos disponibles. Sube el archivo desde ⚙️ Configuración.")
         return
 
+    # Aplicar filtro si hay texto
     if filtro:
         q = filtro.strip().lower()
         mascara = pd.Series(False, index=df.index)
@@ -681,6 +643,7 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
     totales_gen = {t: df[t].sum() for t in TRAMOS}
     total_gen   = sum(totales_gen.values())
 
+    # Métricas generales
     st.metric("**Total general**", f"${total_gen:,.0f}")
     cols = st.columns(5)
     for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
@@ -688,6 +651,7 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     st.divider()
 
+    # Totales por entidad, ordenados de mayor a menor
     totales_ent = (
         df.groupby(entidad_col)[TRAMOS]
         .sum()
@@ -697,6 +661,7 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     for entidad, row in totales_ent.iterrows():
         total_ent = row["total"]
+        # Cabecera con nombre normal y monto 20% más grande
         st.markdown(
             f"<div style='display:flex;align-items:baseline;gap:0.4em;padding:0.3em 0 0.1em 0'>"
             f"<span style='font-weight:600'>{entidad}</span>"
@@ -705,10 +670,12 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             unsafe_allow_html=True,
         )
         with st.expander("Ver detalle"):
+            # Tramos del grupo
             gcols = st.columns(5)
             for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
                 gcols[i].metric(l, f"${row[t]:,.0f}")
 
+            # Facturas individuales del grupo
             grupo = df[df[entidad_col] == entidad].copy()
             disp_cols = [c for c in ["rut", "vendedor", "num_factura", "emision", "vencimiento"] if c in grupo.columns] + TRAMOS
             disp = grupo[disp_cols].copy()
@@ -729,14 +696,9 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
-def render_flujos(
-    df_cobrar: pd.DataFrame,
-    df_deudas: pd.DataFrame,
-    cobrar_encontrado: bool = True,
-    deudas_encontrado: bool = True,
-    diag_cobrar: str = "",
-    diag_deudas: str = "",
-):
+
+def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
+    # Fuente 18px para widgets del tab Flujos
     st.markdown(
         """
         <style>
@@ -749,37 +711,20 @@ def render_flujos(
         """,
         unsafe_allow_html=True,
     )
+    # Fila superior: status + reload
     c1, c2 = st.columns([8, 2])
     with c2:
         if st.button("🔄 Recargar flujos", key="btn_recargar_flujos"):
             get_flujos.clear()
+            limpiar_cache()
             st.rerun()
     with c1:
-        def _estado(df, encontrado):
-            if not df.empty:
-                return f"✅ {len(df)} facturas"
-            if not encontrado:
-                return "❌ archivo no encontrado"
-            return "⚠️ formato inválido"
-
         st.caption(
-            f"Cuentas por Cobrar: {_estado(df_cobrar, cobrar_encontrado)} | "
-            f"Cuentas por Pagar: {_estado(df_deudas, deudas_encontrado)}"
+            f"Cuentas por Cobrar: {'✅ ' + str(len(df_cobrar)) + ' facturas' if not df_cobrar.empty else '❌ sin datos'} | "
+            f"Cuentas por Pagar: {'✅ ' + str(len(df_deudas)) + ' facturas' if not df_deudas.empty else '❌ sin datos'}"
         )
 
-    if (df_cobrar.empty or df_deudas.empty) and rol == "admin":
-        with st.expander("🔍 Diagnóstico de carga", expanded=True):
-            if df_cobrar.empty:
-                st.error(f"**Cobrar:** {diag_cobrar or 'sin detalle'}")
-            if df_deudas.empty:
-                st.error(f"**Deudas:** {diag_deudas or 'sin detalle'}")
-            if EN_RAILWAY:
-                _fl = listar_flujos()
-                if _fl:
-                    st.info(f"**Archivos en flujos/ (GitHub):** {', '.join(_fl)}")
-                else:
-                    st.warning("**La carpeta flujos/ en GitHub está vacía o no existe.**")
-
+    # Buscador único
     filtro = st.text_input(
         "🔍 Buscar por cliente, proveedor, N° factura o RUT",
         placeholder="Ej: POLYQUIL, 12345, 76.543.210-1",
@@ -811,6 +756,7 @@ def _fmt_pesos(v):
 
 
 def _fmt_num_gen(v):
+    """Formatea números genéricos (días, horas, porcentajes)."""
     try:
         f = float(v)
         return f"{f:,.2f}".rstrip("0").rstrip(".") if f != 0 else "—"
@@ -825,10 +771,12 @@ COLS_PESOS = set(COLS_NUMERICAS_DETALLE) - {
 
 
 def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
+    """Renderiza los grupos de campos de un trabajador como secciones con subtotales."""
     for grupo, campos in GRUPOS_DETALLE.items():
         presentes = [c for c in campos if c in row.index]
         if not presentes:
             continue
+        # Filtrar campos sin valor (0 o vacío) para no ensuciar la tarjeta
         no_vacios = [c for c in presentes if row.get(c, 0) not in (0, "", None, "—")]
         if not no_vacios and grupo not in ("👤 Identificación",):
             continue
@@ -837,20 +785,23 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
         subtotal = sum(float(row.get(c, 0) or 0) for c in subtotal_cols if c in row.index)
 
         encabezado = grupo
-        subtotal_str = f" — ${subtotal:,.0f}" if subtotal != 0 else ""
-        st.markdown(f"**{encabezado}{subtotal_str}**")
-        cols_mostrar = no_vacios if no_vacios else presentes
-        n = min(len(cols_mostrar), 4)
-        cols_ui = st.columns(n) if n > 0 else []
-        for i, c in enumerate(cols_mostrar):
-            val = row.get(c, 0)
-            label = LABELS_COLS.get(c, c)
-            if c in COLS_PESOS:
-                display = _fmt_pesos(val)
-            else:
-                display = str(val) if val not in (0, "", None) else "—"
-            cols_ui[i % n].metric(label, display)
+        if subtotal != 0:
+            encabezado += f" — **${subtotal:,.0f}**"
 
+        with st.expander(encabezado, expanded=False):
+            cols_mostrar = no_vacios if no_vacios else presentes
+            n = min(len(cols_mostrar), 4)
+            cols_ui = st.columns(n) if n > 0 else []
+            for i, c in enumerate(cols_mostrar):
+                val = row.get(c, 0)
+                label = LABELS_COLS.get(c, c)
+                if c in COLS_PESOS:
+                    display = _fmt_pesos(val)
+                else:
+                    display = str(val) if val not in (0, "", None) else "—"
+                cols_ui[i % n].metric(label, display)
+
+    # Resultado final
     liq = float(row.get("liquido", 0) or 0)
     costo = float(row.get("costo_empresa", 0) or 0)
     st.markdown(
@@ -867,28 +818,37 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         st.warning("No hay datos de remuneraciones disponibles.")
         return
 
+    # Solo desde 2026 en adelante
+    df = df[df["anio"] >= 2026].copy()
+    if df.empty:
+        st.info("No hay datos de remuneraciones para 2026 en adelante.")
+        return
+
     st.markdown("### 📒 Libro de Remuneraciones")
 
     subtab_trab, subtab_libro, subtab_buscar = st.tabs([
         "👤 Detalle por Trabajador", "📊 Detalle Libro", "🔍 Buscar Trabajador"
     ])
 
-    with subtab_trab:
-        orden = st.radio(
-            "Orden",
-            ["Más reciente primero", "Más antiguo primero"],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="libro_orden",
-        )
-        ascendente = orden == "Más antiguo primero"
+    # Orden compartido entre las dos primeras tabs
+    orden = st.radio(
+        "Orden",
+        ["Más reciente primero", "Más antiguo primero"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="libro_orden",
+    )
+    ascendente = orden == "Más antiguo primero"
 
-        meses_disponibles = (
-            df[["anio", "mes"]]
-            .drop_duplicates()
-            .sort_values(["anio", "mes"], ascending=ascendente)
-            .values.tolist()
-        )
+    meses_disponibles = (
+        df[["anio", "mes"]]
+        .drop_duplicates()
+        .sort_values(["anio", "mes"], ascending=ascendente)
+        .values.tolist()
+    )
+
+    # ── Detalle por Trabajador ─────────────────────────────────────────────────
+    with subtab_trab:
         for anio, mes in meses_disponibles:
             df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
             n_emp = len(df_mes)
@@ -921,7 +881,9 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                     _tarjeta_trabajador(row, key_prefix=f"mes_{anio}_{mes}_{idx}")
                     st.markdown("<hr style='margin:0.4em 0;border-color:#eee'>", unsafe_allow_html=True)
 
+    # ── Detalle Libro ──────────────────────────────────────────────────────────
     with subtab_libro:
+        # Columnas a mostrar en la tabla: todas las numéricas presentes en el df
         ORDEN_COLS_TABLA = [
             "empleado",
             "sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
@@ -951,6 +913,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
                 expanded=False,
             ):
+                # Construir filas de datos + fila de totales
                 def _fp(v):
                     try:
                         f = float(v)
@@ -970,6 +933,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         celdas.append(f"<td style='padding:4px 10px;{sticky}text-align:{align}'>{txt}</td>")
                     filas_html.append("<tr>" + "".join(celdas) + "</tr>")
 
+                # Fila de totales
                 celdas_total = []
                 for c in cols_tabla:
                     if c == "empleado":
@@ -989,24 +953,28 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         )
                 filas_html.append("<tr>" + "".join(celdas_total) + "</tr>")
 
+                # Headers
                 ths = []
                 for c, h in zip(cols_tabla, headers):
                     sticky = ("position:sticky;left:0;z-index:2;background:#f0f2f6;" if c == "empleado"
                               else "background:#f0f2f6;")
                     ths.append(f"<th style='padding:6px 10px;white-space:nowrap;text-align:center;{sticky}'>{h}</th>")
 
-                html = (
-                    "<div style='overflow-x:auto;max-height:520px;overflow-y:auto;"
-                    "border:1px solid #e0e0e0;border-radius:6px'>"
-                    "<table style='border-collapse:collapse;font-size:13px;width:100%'>"
-                    "<thead style='position:sticky;top:0;z-index:3'>"
-                    "<tr>" + "".join(ths) + "</tr>"
-                    "</thead><tbody>"
-                    + "".join(filas_html)
-                    + "</tbody></table></div>"
-                )
+                html = f"""
+                <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
+                <table style="border-collapse:collapse;font-size:13px;width:100%">
+                <thead style="position:sticky;top:0;z-index:3">
+                <tr>{"".join(ths)}</tr>
+                </thead>
+                <tbody>
+                {"".join(filas_html)}
+                </tbody>
+                </table>
+                </div>
+                """
                 st.markdown(html, unsafe_allow_html=True)
 
+    # ── Buscador de trabajador ─────────────────────────────────────────────────
     with subtab_buscar:
         busqueda = st.text_input(
             "Buscar trabajador",
@@ -1036,6 +1004,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
         df_hist = df_trab.sort_values(["anio", "mes"], ascending=False)
 
+        # Totales acumulados del trabajador
         total_liq   = df_hist["liquido"].sum()       if "liquido"       in df_hist.columns else 0
         total_costo = df_hist["costo_empresa"].sum() if "costo_empresa" in df_hist.columns else 0
         total_imp   = df_hist["impuesto_unico"].sum() if "impuesto_unico" in df_hist.columns else 0
@@ -1062,6 +1031,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
 def _boton_pdf(key, generador_fn, nombre_archivo):
+    """Renderiza botón Exportar PDF + descarga."""
     if st.button("🖨️ Exportar PDF", key=f"btn_pdf_{key}", help="Genera un PDF landscape con el contenido de esta pestaña"):
         with st.spinner("Generando PDF..."):
             try:
@@ -1144,7 +1114,7 @@ if tab_r is not None:
 
 if tab_f is not None:
     with tab_f:
-        render_flujos(df_cobrar, df_deudas, _cobrar_encontrado, _deudas_encontrado, _diag_cobrar, _diag_deudas)
+        render_flujos(df_cobrar, df_deudas)
 
 if tab_libro is not None:
     with tab_libro:
