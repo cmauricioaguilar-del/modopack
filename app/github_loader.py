@@ -221,12 +221,17 @@ def guardar_config_flujos(config: dict) -> bool:
 # ── Bootstrap Railway ──────────────────────────────────────────────────────────
 
 def carpetas_railway() -> dict:
-    """Retorna dict con todas las carpetas descargadas desde GitHub."""
-    return {
-        "ventas_2025":  obtener_carpeta("ventas/2025"),
-        "ventas_2026":  obtener_carpeta("ventas/2026"),
-        "compras_2025": obtener_carpeta("compras/2025"),
-        "compras_2026": obtener_carpeta("compras/2026"),
-        "rrhh_2025":    obtener_carpeta("rrhh/2025"),
-        "rrhh_2026":    obtener_carpeta("rrhh/2026"),
-    }
+    """Retorna dict con todas las carpetas descargadas desde GitHub en paralelo."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    keys = ["ventas_2025", "ventas_2026", "compras_2025", "compras_2026", "rrhh_2025", "rrhh_2026"]
+    repos = ["ventas/2025", "ventas/2026", "compras/2025", "compras/2026", "rrhh/2025", "rrhh/2026"]
+    resultado = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futuros = {executor.submit(obtener_carpeta, r): k for k, r in zip(keys, repos)}
+        for futuro in as_completed(futuros):
+            k = futuros[futuro]
+            try:
+                resultado[k] = futuro.result()
+            except Exception:
+                resultado[k] = ""
+    return resultado

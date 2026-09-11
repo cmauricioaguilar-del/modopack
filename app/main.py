@@ -156,21 +156,26 @@ MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"
 COLORES = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
 
 
+# ── Carga inicial de carpetas (fuera del sidebar para evitar errores de contexto) ──
+if EN_RAILWAY and "carpetas_railway" not in st.session_state:
+    with st.spinner("📡 Conectando con GitHub y descargando datos..."):
+        st.session_state.carpetas_railway = carpetas_railway()
+
+if EN_RAILWAY:
+    _c = st.session_state.carpetas_railway
+    carpeta_ventas_2025  = _c["ventas_2025"]
+    carpeta_ventas_2026  = _c["ventas_2026"]
+    carpeta_compras_2025 = _c["compras_2025"]
+    carpeta_compras_2026 = _c["compras_2026"]
+    carpeta_rrhh_2025    = _c["rrhh_2025"]
+    carpeta_rrhh_2026    = _c["rrhh_2026"]
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Configuración")
 
     if EN_RAILWAY:
         st.info("📡 Leyendo datos desde GitHub")
-        if "carpetas_railway" not in st.session_state:
-            st.session_state.carpetas_railway = carpetas_railway()
-        _c = st.session_state.carpetas_railway
-        carpeta_ventas_2025  = _c["ventas_2025"]
-        carpeta_ventas_2026  = _c["ventas_2026"]
-        carpeta_compras_2025 = _c["compras_2025"]
-        carpeta_compras_2026 = _c["compras_2026"]
-        carpeta_rrhh_2025    = _c["rrhh_2025"]
-        carpeta_rrhh_2026    = _c["rrhh_2026"]
     else:
         with st.expander("📁 Carpetas de datos", expanded=False):
             carpeta_ventas_2025 = st.text_input(
