@@ -18,13 +18,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Usuarios y roles ──────────────────────────────────────────────────────────
+# ── Usuarios y roles ──────────────────────────────────────────────────
 USERS = {
     "admin":    {"clave": "modopack2026", "rol": "admin"},
     "gerencia": {"clave": "modopack2026", "rol": "gerencia"},
 }
 
-# ── Login ─────────────────────────────────────────────────────────────────────
+# ── Login ───────────────────────────────────────────────────────────────
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 if "rol" not in st.session_state:
@@ -139,7 +139,7 @@ if not st.session_state.autenticado:
 
 rol = st.session_state.rol
 
-# ── Config Flujos ─────────────────────────────────────────────────────────────
+# ── Config Flujos ──────────────────────────────────────────────────────
 if "flujos_config" not in st.session_state:
     st.session_state.flujos_config = (leer_config_flujos() if EN_RAILWAY
                                       else {"gerencia_puede_ver": False})
@@ -157,9 +157,16 @@ COLORES = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
 
 
 # ── Carga inicial de carpetas (fuera del sidebar para evitar errores de contexto) ──
+# Se usa try/except para que un fallo de red no deje el app en loop infinito.
 if EN_RAILWAY and "carpetas_railway" not in st.session_state:
     with st.spinner("📡 Conectando con GitHub y descargando datos..."):
-        st.session_state.carpetas_railway = carpetas_railway()
+        try:
+            st.session_state.carpetas_railway = carpetas_railway()
+        except Exception:
+            st.session_state.carpetas_railway = {
+                k: "" for k in ["ventas_2025", "ventas_2026", "compras_2025",
+                                 "compras_2026", "rrhh_2025", "rrhh_2026"]
+            }
 
 if EN_RAILWAY:
     _c = st.session_state.carpetas_railway
@@ -170,7 +177,7 @@ if EN_RAILWAY:
     carpeta_rrhh_2025    = _c["rrhh_2025"]
     carpeta_rrhh_2026    = _c["rrhh_2026"]
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Configuración")
 
@@ -203,7 +210,9 @@ with st.sidebar:
                 value=r"C:\Users\pc\OneDrive\Escritorio\2026\LIBRO REMUNERACIONES",
             )
 
-    if st.button("🔄 Recargar datos", use_container_width=True):
+    # Botón deshabilitado mientras se está descargando para evitar loop
+    _cargando = EN_RAILWAY and "carpetas_railway" not in st.session_state
+    if st.button("🔄 Recargar datos", use_container_width=True, disabled=_cargando):
         if EN_RAILWAY:
             limpiar_cache()
         st.cache_data.clear()
@@ -264,7 +273,7 @@ with st.sidebar:
     umbral = st.slider("Umbral Pareto (%)", 50, 95, 80, 5) / 100
 
 
-# ── Carga de datos ────────────────────────────────────────────────────────────
+# ── Carga de datos ─────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="Cargando ventas...")
 def get_ventas(c2025, c2026):
     return cargar_ventas([c2025, c2026])
@@ -497,7 +506,7 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
         n_filas = len(tabla_fmt)
         st.dataframe(styled, use_container_width=True, height=35 * n_filas + 38)
 
-    # ── Métricas ───────────────────────────────────────────────────────────────
+    # ── Métricas ─────────────────────────────────────────────────────
     def _delta(nuevo, viejo):
         if viejo and viejo != 0:
             return f"{((nuevo - viejo) / abs(viejo)) * 100:+.1f}%"
@@ -538,7 +547,7 @@ def render_resumen(df_v, df_c, df_r, anios, rol="admin"):
 
     st.divider()
 
-    # ── Tablas ─────────────────────────────────────────────────────────────────
+    # ── Tablas ───────────────────────────────────────────────────────────────
     if rol == "admin":
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -637,7 +646,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
         st.info("No hay datos disponibles. Sube el archivo desde ⚙️ Configuración.")
         return
 
-    # Aplicar filtro si hay texto
     if filtro:
         q = filtro.strip().lower()
         mascara = pd.Series(False, index=df.index)
@@ -652,7 +660,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
     totales_gen = {t: df[t].sum() for t in TRAMOS}
     total_gen   = sum(totales_gen.values())
 
-    # Métricas generales
     st.metric("**Total general**", f"${total_gen:,.0f}")
     cols = st.columns(5)
     for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
@@ -660,7 +667,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     st.divider()
 
-    # Totales por entidad, ordenados de mayor a menor
     totales_ent = (
         df.groupby(entidad_col)[TRAMOS]
         .sum()
@@ -670,7 +676,6 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
 
     for entidad, row in totales_ent.iterrows():
         total_ent = row["total"]
-        # Cabecera con nombre normal y monto 20% más grande
         st.markdown(
             f"<div style='display:flex;align-items:baseline;gap:0.4em;padding:0.3em 0 0.1em 0'>"
             f"<span style='font-weight:600'>{entidad}</span>"
@@ -679,12 +684,10 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             unsafe_allow_html=True,
         )
         with st.expander("Ver detalle"):
-            # Tramos del grupo
             gcols = st.columns(5)
             for i, (t, l) in enumerate(zip(TRAMOS, TRAMOS_LABEL)):
                 gcols[i].metric(l, f"${row[t]:,.0f}")
 
-            # Facturas individuales del grupo
             grupo = df[df[entidad_col] == entidad].copy()
             disp_cols = [c for c in ["rut", "vendedor", "num_factura", "emision", "vencimiento"] if c in grupo.columns] + TRAMOS
             disp = grupo[disp_cols].copy()
@@ -705,9 +708,7 @@ def _render_seccion_flujos(df: pd.DataFrame, entidad_col: str, filtro: str = "")
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
-
 def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
-    # Fuente 18px para widgets del tab Flujos
     st.markdown(
         """
         <style>
@@ -720,7 +721,6 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
         """,
         unsafe_allow_html=True,
     )
-    # Fila superior: status + reload
     c1, c2 = st.columns([8, 2])
     with c2:
         if st.button("🔄 Recargar flujos", key="btn_recargar_flujos"):
@@ -733,7 +733,6 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
             f"Cuentas por Pagar: {'✅ ' + str(len(df_deudas)) + ' facturas' if not df_deudas.empty else '❌ sin datos'}"
         )
 
-    # Buscador único
     filtro = st.text_input(
         "🔍 Buscar por cliente, proveedor, N° factura o RUT",
         placeholder="Ej: POLYQUIL, 12345, 76.543.210-1",
@@ -755,7 +754,7 @@ def render_flujos(df_cobrar: pd.DataFrame, df_deudas: pd.DataFrame):
         _render_seccion_flujos(df_deudas, "proveedor", filtro)
 
 
-# ── Libro de Remuneraciones ───────────────────────────────────────────────────
+# ── Libro de Remuneraciones ────────────────────────────────────────────────────
 def _fmt_pesos(v):
     try:
         f = float(v)
@@ -765,7 +764,6 @@ def _fmt_pesos(v):
 
 
 def _fmt_num_gen(v):
-    """Formatea números genéricos (días, horas, porcentajes)."""
     try:
         f = float(v)
         return f"{f:,.2f}".rstrip("0").rstrip(".") if f != 0 else "—"
@@ -780,12 +778,10 @@ COLS_PESOS = set(COLS_NUMERICAS_DETALLE) - {
 
 
 def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
-    """Renderiza los grupos de campos de un trabajador como secciones con subtotales."""
     for grupo, campos in GRUPOS_DETALLE.items():
         presentes = [c for c in campos if c in row.index]
         if not presentes:
             continue
-        # Filtrar campos sin valor (0 o vacío) para no ensuciar la tarjeta
         no_vacios = [c for c in presentes if row.get(c, 0) not in (0, "", None, "—")]
         if not no_vacios and grupo not in ("👤 Identificación",):
             continue
@@ -815,7 +811,6 @@ def _tarjeta_trabajador(row: pd.Series, key_prefix: str):
                 display = str(val) if val not in (0, "", None) else "—"
             cols_ui[i % n].metric(label, display)
 
-    # Resultado final
     liq = float(row.get("liquido", 0) or 0)
     costo = float(row.get("costo_empresa", 0) or 0)
     st.markdown(
@@ -832,7 +827,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         st.warning("No hay datos de remuneraciones disponibles.")
         return
 
-    # Solo desde 2026 en adelante
     df = df[df["anio"] >= 2026].copy()
     if df.empty:
         st.info("No hay datos de remuneraciones para 2026 en adelante.")
@@ -844,7 +838,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         "👤 Detalle por Trabajador", "📊 Detalle Libro", "🔍 Buscar Trabajador"
     ])
 
-    # Orden compartido entre las dos primeras tabs
     orden = st.radio(
         "Orden",
         ["Más reciente primero", "Más antiguo primero"],
@@ -861,7 +854,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
         .values.tolist()
     )
 
-    # ── Detalle por Trabajador ─────────────────────────────────────────────────
     with subtab_trab:
         for anio, mes in meses_disponibles:
             df_mes = df[(df["anio"] == anio) & (df["mes"] == mes)]
@@ -895,9 +887,7 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                     _tarjeta_trabajador(row, key_prefix=f"mes_{anio}_{mes}_{idx}")
                     st.markdown("<hr style='margin:0.4em 0;border-color:#eee'>", unsafe_allow_html=True)
 
-    # ── Detalle Libro ──────────────────────────────────────────────────────────
     with subtab_libro:
-        # Columnas a mostrar en la tabla: todas las numéricas presentes en el df
         ORDEN_COLS_TABLA = [
             "empleado",
             "sueldo_base", "gratificacion", "bonos", "bono_produccion", "bono_comercial",
@@ -927,7 +917,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                 f"Costo Empresa: ${costo_total:,.0f} | Líquido: ${liq_total:,.0f}",
                 expanded=False,
             ):
-                # Construir filas de datos + fila de totales
                 def _fp(v):
                     try:
                         f = float(v)
@@ -947,7 +936,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         celdas.append(f"<td style='padding:4px 10px;{sticky}text-align:{align}'>{txt}</td>")
                     filas_html.append("<tr>" + "".join(celdas) + "</tr>")
 
-                # Fila de totales
                 celdas_total = []
                 for c in cols_tabla:
                     if c == "empleado":
@@ -967,28 +955,24 @@ def render_libro_remuneraciones(df: pd.DataFrame):
                         )
                 filas_html.append("<tr>" + "".join(celdas_total) + "</tr>")
 
-                # Headers
                 ths = []
                 for c, h in zip(cols_tabla, headers):
                     sticky = ("position:sticky;left:0;z-index:2;background:#f0f2f6;" if c == "empleado"
                               else "background:#f0f2f6;")
                     ths.append(f"<th style='padding:6px 10px;white-space:nowrap;text-align:center;{sticky}'>{h}</th>")
 
-                html = f"""
-                <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
-                <table style="border-collapse:collapse;font-size:13px;width:100%">
-                <thead style="position:sticky;top:0;z-index:3">
-                <tr>{"".join(ths)}</tr>
-                </thead>
-                <tbody>
-                {"".join(filas_html)}
-                </tbody>
-                </table>
-                </div>
-                """
+                html = (
+                    "<div style='overflow-x:auto;max-height:520px;overflow-y:auto;"
+                    "border:1px solid #e0e0e0;border-radius:6px'>"
+                    "<table style='border-collapse:collapse;font-size:13px;width:100%'>"
+                    "<thead style='position:sticky;top:0;z-index:3'>"
+                    "<tr>" + "".join(ths) + "</tr>"
+                    "</thead><tbody>"
+                    + "".join(filas_html)
+                    + "</tbody></table></div>"
+                )
                 st.markdown(html, unsafe_allow_html=True)
 
-    # ── Buscador de trabajador ─────────────────────────────────────────────────
     with subtab_buscar:
         busqueda = st.text_input(
             "Buscar trabajador",
@@ -1018,7 +1002,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
         df_hist = df_trab.sort_values(["anio", "mes"], ascending=False)
 
-        # Totales acumulados del trabajador
         total_liq   = df_hist["liquido"].sum()       if "liquido"       in df_hist.columns else 0
         total_costo = df_hist["costo_empresa"].sum() if "costo_empresa" in df_hist.columns else 0
         total_imp   = df_hist["impuesto_unico"].sum() if "impuesto_unico" in df_hist.columns else 0
@@ -1045,7 +1028,6 @@ def render_libro_remuneraciones(df: pd.DataFrame):
 
 # ── Helpers PDF ───────────────────────────────────────────────────────────────
 def _boton_pdf(key, generador_fn, nombre_archivo):
-    """Renderiza botón Exportar PDF + descarga."""
     if st.button("🖨️ Exportar PDF", key=f"btn_pdf_{key}", help="Genera un PDF landscape con el contenido de esta pestaña"):
         with st.spinner("Generando PDF..."):
             try:
@@ -1062,7 +1044,7 @@ def _boton_pdf(key, generador_fn, nombre_archivo):
         )
 
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
+# ── Tabs ──────────────────────────────────────────────────────────────────
 _fecha_hoy = _date.today().strftime("%Y%m%d")
 
 _gerencia_ve_flujos = st.session_state.flujos_config.get("gerencia_puede_ver", False)
