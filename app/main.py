@@ -216,7 +216,8 @@ with st.sidebar:
         if EN_RAILWAY:
             limpiar_cache()
         st.cache_data.clear()
-        st.session_state.pop("carpetas_railway", None)
+        for _k in ["carpetas_railway", "_df_ventas", "_df_compras", "_df_rrhh"]:
+            st.session_state.pop(_k, None)
         st.rerun()
 
     # Uploader — solo admin en Railway
@@ -274,24 +275,6 @@ with st.sidebar:
 
 
 # ── Carga de datos ─────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Cargando ventas...")
-def get_ventas(c2025, c2026):
-    return cargar_ventas([c2025, c2026])
-
-@st.cache_data(show_spinner="Cargando compras...")
-def get_compras(c2025, c2026):
-    return cargar_compras([c2025, c2026])
-
-@st.cache_data(show_spinner="Cargando RRHH...")
-def get_rrhh(c2025, c2026):
-    import pandas as pd
-    frames = []
-    for c in [c2025, c2026]:
-        df = cargar_rrhh(c)
-        if not df.empty:
-            frames.append(df)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
 @st.cache_data(show_spinner="Cargando flujos...")
 def get_flujos():
     if not EN_RAILWAY:
@@ -302,9 +285,48 @@ def get_flujos():
     df_deudas = cargar_deudas(deudas_bytes)[0]     if deudas_bytes  else pd.DataFrame()
     return df_cobrar, df_deudas
 
-df_ventas  = get_ventas(carpeta_ventas_2025, carpeta_ventas_2026)
-df_compras = get_compras(carpeta_compras_2025, carpeta_compras_2026)
-df_rrhh    = get_rrhh(carpeta_rrhh_2025, carpeta_rrhh_2026)
+# En Railway: session_state garantiza que "Recargar" descargue datos frescos desde GitHub.
+# En local: @st.cache_data con los paths como clave (cambian cuando el usuario edita los campos).
+if EN_RAILWAY:
+    if "_df_ventas" not in st.session_state:
+        with st.spinner("Cargando ventas..."):
+            st.session_state._df_ventas  = cargar_ventas([carpeta_ventas_2025, carpeta_ventas_2026])
+        with st.spinner("Cargando compras..."):
+            st.session_state._df_compras = cargar_compras([carpeta_compras_2025, carpeta_compras_2026])
+        with st.spinner("Cargando RRHH..."):
+            _frames_rrhh = []
+            for _c_rrhh in [carpeta_rrhh_2025, carpeta_rrhh_2026]:
+                _df_rrhh_tmp = cargar_rrhh(_c_rrhh)
+                if not _df_rrhh_tmp.empty:
+                    _frames_rrhh.append(_df_rrhh_tmp)
+            st.session_state._df_rrhh = (
+                pd.concat(_frames_rrhh, ignore_index=True) if _frames_rrhh else pd.DataFrame()
+            )
+    df_ventas  = st.session_state._df_ventas
+    df_compras = st.session_state._df_compras
+    df_rrhh    = st.session_state._df_rrhh
+else:
+    @st.cache_data(show_spinner="Cargando ventas...")
+    def _get_ventas_local(c2025, c2026):
+        return cargar_ventas([c2025, c2026])
+
+    @st.cache_data(show_spinner="Cargando compras...")
+    def _get_compras_local(c2025, c2026):
+        return cargar_compras([c2025, c2026])
+
+    @st.cache_data(show_spinner="Cargando RRHH...")
+    def _get_rrhh_local(c2025, c2026):
+        frames = []
+        for c in [c2025, c2026]:
+            df = cargar_rrhh(c)
+            if not df.empty:
+                frames.append(df)
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    df_ventas  = _get_ventas_local(carpeta_ventas_2025, carpeta_ventas_2026)
+    df_compras = _get_compras_local(carpeta_compras_2025, carpeta_compras_2026)
+    df_rrhh    = _get_rrhh_local(carpeta_rrhh_2025, carpeta_rrhh_2026)
+
 df_cobrar, df_deudas = get_flujos()
 
 anios_v = sorted(df_ventas["anio"].unique().tolist()) if not df_ventas.empty else []
