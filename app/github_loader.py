@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import requests
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = "cmauricioaguilar-del/modopack-datos"
@@ -42,15 +43,22 @@ def _descargar_archivo(path_repo: str) -> bytes | None:
 
 
 def _descargar_carpeta(carpeta_repo: str, destino: Path):
-    """Descarga todos los archivos de una carpeta del repo a un directorio local."""
+    """Descarga todos los archivos de una carpeta del repo a un directorio local (en paralelo)."""
     destino.mkdir(parents=True, exist_ok=True)
-    for f in _listar(carpeta_repo):
+    archivos = _listar(carpeta_repo)
+    if not archivos:
+        return
+
+    def _bajar(f):
         contenido = _descargar_archivo(f["path"])
         if contenido is not None:
             (destino / f["name"]).write_bytes(contenido)
 
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(_bajar, archivos))
 
-# ── Detección de destino ───────────────────────────────────────────────────────
+
+# ── Detección de destino ─────────────────────────────────────────────────────
 
 def detectar_destino(nombre: str) -> str | None:
     """Detecta la carpeta destino en el repo según el nombre del archivo."""
@@ -77,7 +85,7 @@ def detectar_destino(nombre: str) -> str | None:
     return None
 
 
-# ── Subir / borrar ─────────────────────────────────────────────────────────────
+# ── Subir / borrar ──────────────────────────────────────────────────────
 
 def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     """Sube o reemplaza un archivo en modopack-datos. Retorna (ok, mensaje)."""
@@ -131,7 +139,7 @@ def borrar_archivo(path_repo: str, sha: str) -> tuple[bool, str]:
     return False, f"❌ Error al eliminar {nombre}: {r.json().get('message', '')}"
 
 
-# ── Listado de archivos ────────────────────────────────────────────────────────
+# ── Listado de archivos ───────────────────────────────────────────────────
 
 def listar_archivos_carpeta(carpeta: str) -> list[dict]:
     """Lista archivos en una carpeta del repo con name, path y sha."""
@@ -144,7 +152,7 @@ def listar_flujos() -> list[str]:
     return [f["name"] for f in _listar("flujos")]
 
 
-# ── Caché de carpetas locales ──────────────────────────────────────────────────
+# ── Caché de carpetas locales ────────────────────────────────────────────────
 
 _cache_dirs: dict[str, str] = {}
 
@@ -173,7 +181,7 @@ def limpiar_cache_carpeta(carpeta_repo: str):
         del _cache_dirs[carpeta_repo]
 
 
-# ── Flujos ─────────────────────────────────────────────────────────────────────
+# ── Flujos ──────────────────────────────────────────────────────────────────
 
 def obtener_archivo_flujos(nombre: str) -> bytes | None:
     """Descarga un archivo de la carpeta flujos/. Intenta con guión bajo y con espacio."""
@@ -185,7 +193,7 @@ def obtener_archivo_flujos(nombre: str) -> bytes | None:
     return result
 
 
-# ── Config flujos ──────────────────────────────────────────────────────────────
+# ── Config flujos ─────────────────────────────────────────────────────────
 
 def leer_config_flujos() -> dict:
     """Lee config/flujos.json del repo. Retorna defaults si no existe."""
@@ -218,14 +226,14 @@ def guardar_config_flujos(config: dict) -> bool:
     return r.status_code in (200, 201)
 
 
-# ── Bootstrap Railway ──────────────────────────────────────────────────────────
+# ── Bootstrap Railway ────────────────────────────────────────────────────────
 
 def carpetas_railway() -> dict:
     """Retorna dict con todas las carpetas descargadas desde GitHub en paralelo."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     keys = ["ventas_2025", "ventas_2026", "compras_2025", "compras_2026", "rrhh_2025", "rrhh_2026"]
     repos = ["ventas/2025", "ventas/2026", "compras/2025", "compras/2026", "rrhh/2025", "rrhh/2026"]
     resultado = {}
+    from concurrent.futures import as_completed
     with ThreadPoolExecutor(max_workers=6) as executor:
         futuros = {executor.submit(obtener_carpeta, r): k for k, r in zip(keys, repos)}
         for futuro in as_completed(futuros):
