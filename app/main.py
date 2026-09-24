@@ -47,6 +47,12 @@ if not st.session_state.autenticado:
     /* Ocultar chrome de Streamlit */
     [data-testid="stHeader"], [data-testid="stToolbar"],
     [data-testid="stDecoration"], #MainMenu {{ display:none !important; }}
+    [data-testid="stStatusWidget"] {{ display: none !important; }}
+
+    /* Suprimir gris de rerun/reconexión */
+    [data-stale="true"] {{ opacity: 1 !important; transition: none !important; }}
+    .stApp, [data-testid="stAppViewContainer"],
+    [data-testid="stMain"] {{ opacity: 1 !important; }}
 
     /* Fondo blanco total */
     html, body, [data-testid="stAppViewContainer"],
