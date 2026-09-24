@@ -1,11 +1,10 @@
 """
-Descarga archivos desde modopack-datos en GitHub a carpetas temporales.
-Se activa solo cuando la app corre en Railway (variable RAILWAY_ENVIRONMENT presente).
+Descarga archivos desde modopack-datos en GitHub a un directorio fijo en disco.
+La descarga solo ocurre si el caché en disco no existe o si limpiar_cache() fue llamado.
+Se activa únicamente cuando la app corre en Railway.
 """
-import io
 import os
 import shutil
-import tempfile
 import requests
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +16,19 @@ API_BASE = f"https://api.github.com/repos/{REPO}/contents"
 
 EN_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
 
+# Directorio fijo en disco — compartido entre todos los workers del proceso Railway.
+# Persiste mientras el contenedor esté vivo (horas/días); solo se borra con limpiar_cache().
+CACHE_BASE = Path("/tmp/modopack_cache")
+
+# Índice en memoria: evita stat() al disco en cada llamada dentro del mismo worker.
+_cache_dirs: dict[str, str] = {}
+
+# Caché de DataFrames: compartido entre sesiones del mismo proceso.
+# Se llena la primera vez que se leen datos y se borra solo con limpiar_cache().
+_df_cache: dict = {}
+
+
+# ── Helpers GitHub ───────────────────────────────────────────────────────────
 
 def _headers():
     return {"Authorization": f"token {GITHUB_TOKEN}"}
@@ -30,20 +42,17 @@ def _listar(carpeta: str) -> list[dict]:
 
 
 def _descargar_archivo(path_repo: str) -> bytes | None:
-    """Descarga el contenido de un archivo vía API autenticada."""
     r = requests.get(
         f"{API_BASE}/{path_repo}",
         params={"ref": BRANCH},
         headers={**_headers(), "Accept": "application/vnd.github.raw"},
         timeout=60,
     )
-    if r.status_code == 200:
-        return r.content
-    return None
+    return r.content if r.status_code == 200 else None
 
 
 def _descargar_carpeta(carpeta_repo: str, destino: Path):
-    """Descarga todos los archivos de una carpeta del repo a un directorio local (en paralelo)."""
+    """Descarga en paralelo todos los archivos de una carpeta del repo."""
     destino.mkdir(parents=True, exist_ok=True)
     archivos = _listar(carpeta_repo)
     if not archivos:
@@ -56,6 +65,70 @@ def _descargar_carpeta(carpeta_repo: str, destino: Path):
 
     with ThreadPoolExecutor(max_workers=8) as ex:
         list(ex.map(_bajar, archivos))
+
+
+# ── Estado del caché ─────────────────────────────────────────────────────────
+
+def cache_disponible() -> bool:
+    """True si el caché en disco existe y tiene al menos una subcarpeta con archivos."""
+    if not CACHE_BASE.exists():
+        return False
+    return any(
+        child.is_dir() and any(child.iterdir())
+        for child in CACHE_BASE.iterdir()
+    )
+
+
+# ── Caché de DataFrames (módulo) ──────────────────────────────────────────────
+
+def df_cache_get() -> dict:
+    return _df_cache
+
+
+def df_cache_set(key: str, value) -> None:
+    _df_cache[key] = value
+
+
+def df_cache_clear() -> None:
+    _df_cache.clear()
+
+
+# ── Caché de carpetas locales ────────────────────────────────────────────────
+
+def obtener_carpeta(carpeta_repo: str) -> str:
+    """Retorna path local con los archivos descargados.
+
+    Prioridad:
+    1. Índice en memoria (_cache_dirs)  — sin I/O
+    2. Directorio en disco (CACHE_BASE) — sin descarga
+    3. Descarga desde GitHub            — solo si no hay caché
+    """
+    if carpeta_repo in _cache_dirs:
+        return _cache_dirs[carpeta_repo]
+
+    disco = CACHE_BASE / carpeta_repo.replace("/", "_")
+    if disco.exists() and any(disco.iterdir()):
+        _cache_dirs[carpeta_repo] = str(disco)
+        return str(disco)
+
+    disco.mkdir(parents=True, exist_ok=True)
+    _descargar_carpeta(carpeta_repo, disco)
+    _cache_dirs[carpeta_repo] = str(disco)
+    return str(disco)
+
+
+def limpiar_cache():
+    """Borra caché en disco, en memoria y DataFrames para forzar re-descarga desde GitHub."""
+    _cache_dirs.clear()
+    _df_cache.clear()
+    shutil.rmtree(CACHE_BASE, ignore_errors=True)
+
+
+def limpiar_cache_carpeta(carpeta_repo: str):
+    """Borra solo la carpeta de una carpeta específica del repo."""
+    _cache_dirs.pop(carpeta_repo, None)
+    _df_cache.clear()
+    shutil.rmtree(CACHE_BASE / carpeta_repo.replace("/", "_"), ignore_errors=True)
 
 
 # ── Detección de destino ─────────────────────────────────────────────────────
@@ -85,7 +158,7 @@ def detectar_destino(nombre: str) -> str | None:
     return None
 
 
-# ── Subir / borrar ──────────────────────────────────────────────────────
+# ── Subir / borrar ───────────────────────────────────────────────────────────
 
 def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     """Sube o reemplaza un archivo en modopack-datos. Retorna (ok, mensaje)."""
@@ -95,7 +168,6 @@ def subir_archivo(nombre: str, contenido_bytes: bytes) -> tuple[bool, str]:
     if not carpeta:
         return False, f"No se pudo detectar el tipo de archivo: {nombre}"
 
-    # Flujos: guardar siempre con nombre canónico para que el downloader lo encuentre
     if carpeta == "flujos":
         _nn = nombre.upper()
         if "POR_COBRAR" in _nn:
@@ -139,52 +211,21 @@ def borrar_archivo(path_repo: str, sha: str) -> tuple[bool, str]:
     return False, f"❌ Error al eliminar {nombre}: {r.json().get('message', '')}"
 
 
-# ── Listado de archivos ───────────────────────────────────────────────────
+# ── Listado de archivos ───────────────────────────────────────────────────────
 
 def listar_archivos_carpeta(carpeta: str) -> list[dict]:
-    """Lista archivos en una carpeta del repo con name, path y sha."""
     return [{"name": f["name"], "path": f["path"], "sha": f["sha"]}
             for f in _listar(carpeta)]
 
 
 def listar_flujos() -> list[str]:
-    """Lista los nombres de archivos en la carpeta flujos/ del repo."""
     return [f["name"] for f in _listar("flujos")]
 
 
-# ── Caché de carpetas locales ────────────────────────────────────────────────
-
-_cache_dirs: dict[str, str] = {}
-
-
-def obtener_carpeta(carpeta_repo: str) -> str:
-    """Retorna path local con los archivos descargados (con cache en memoria)."""
-    if carpeta_repo in _cache_dirs:
-        return _cache_dirs[carpeta_repo]
-    tmp = Path(tempfile.mkdtemp()) / carpeta_repo.replace("/", "_")
-    _descargar_carpeta(carpeta_repo, tmp)
-    _cache_dirs[carpeta_repo] = str(tmp)
-    return str(tmp)
-
-
-def limpiar_cache():
-    """Borra las carpetas descargadas para forzar una re-descarga desde GitHub."""
-    for d in list(_cache_dirs.values()):
-        shutil.rmtree(Path(d).parent, ignore_errors=True)
-    _cache_dirs.clear()
-
-
-def limpiar_cache_carpeta(carpeta_repo: str):
-    """Borra solo la carpeta local de una carpeta específica del repo."""
-    if carpeta_repo in _cache_dirs:
-        shutil.rmtree(Path(_cache_dirs[carpeta_repo]).parent, ignore_errors=True)
-        del _cache_dirs[carpeta_repo]
-
-
-# ── Flujos ──────────────────────────────────────────────────────────────────
+# ── Flujos ────────────────────────────────────────────────────────────────────
 
 def obtener_archivo_flujos(nombre: str) -> bytes | None:
-    """Descarga un archivo de la carpeta flujos/. Intenta con guión bajo y con espacio."""
+    """Descarga un archivo de la carpeta flujos/."""
     result = _descargar_archivo(f"flujos/{nombre}")
     if result is None:
         alt = nombre.replace("_", " ") if "_" in nombre else nombre.replace(" ", "_")
@@ -193,10 +234,9 @@ def obtener_archivo_flujos(nombre: str) -> bytes | None:
     return result
 
 
-# ── Config flujos ─────────────────────────────────────────────────────────
+# ── Config flujos ─────────────────────────────────────────────────────────────
 
 def leer_config_flujos() -> dict:
-    """Lee config/flujos.json del repo. Retorna defaults si no existe."""
     import json
     contenido = _descargar_archivo("config/flujos.json")
     if contenido:
@@ -208,7 +248,6 @@ def leer_config_flujos() -> dict:
 
 
 def guardar_config_flujos(config: dict) -> bool:
-    """Guarda config/flujos.json en el repo."""
     import json
     import base64 as _b64
     path_repo = "config/flujos.json"
@@ -226,11 +265,11 @@ def guardar_config_flujos(config: dict) -> bool:
     return r.status_code in (200, 201)
 
 
-# ── Bootstrap Railway ────────────────────────────────────────────────────────
+# ── Bootstrap Railway ─────────────────────────────────────────────────────────
 
 def carpetas_railway() -> dict:
-    """Retorna dict con todas las carpetas descargadas desde GitHub en paralelo."""
-    keys = ["ventas_2025", "ventas_2026", "compras_2025", "compras_2026", "rrhh_2025", "rrhh_2026"]
+    """Retorna paths locales de todas las carpetas (descarga en paralelo si es necesario)."""
+    keys  = ["ventas_2025", "ventas_2026", "compras_2025", "compras_2026", "rrhh_2025", "rrhh_2026"]
     repos = ["ventas/2025", "ventas/2026", "compras/2025", "compras/2026", "rrhh/2025", "rrhh/2026"]
     resultado = {}
     from concurrent.futures import as_completed

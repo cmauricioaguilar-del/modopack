@@ -8,6 +8,7 @@ from processor_rrhh import (cargar_rrhh, resumen_mensual_rrhh, ranking_empleados
 from github_loader import (
     EN_RAILWAY, carpetas_railway, subir_archivo, limpiar_cache,
     obtener_archivo_flujos, leer_config_flujos, guardar_config_flujos,
+    cache_disponible, df_cache_get, df_cache_set,
 )
 from processor_flujos import cargar_por_cobrar, cargar_deudas, TRAMOS, TRAMOS_LABEL
 
@@ -159,14 +160,19 @@ COLORES = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
 # ── Carga inicial de carpetas (fuera del sidebar para evitar errores de contexto) ──
 # Se usa try/except para que un fallo de red no deje el app en loop infinito.
 if EN_RAILWAY and "carpetas_railway" not in st.session_state:
-    with st.spinner("📡 Conectando con GitHub y descargando datos..."):
+    _keys_carpetas = ["ventas_2025", "ventas_2026", "compras_2025",
+                      "compras_2026", "rrhh_2025", "rrhh_2026"]
+    if not cache_disponible():
+        with st.spinner("📡 Conectando con GitHub y descargando datos..."):
+            try:
+                st.session_state.carpetas_railway = carpetas_railway()
+            except Exception:
+                st.session_state.carpetas_railway = {k: "" for k in _keys_carpetas}
+    else:
         try:
             st.session_state.carpetas_railway = carpetas_railway()
         except Exception:
-            st.session_state.carpetas_railway = {
-                k: "" for k in ["ventas_2025", "ventas_2026", "compras_2025",
-                                 "compras_2026", "rrhh_2025", "rrhh_2026"]
-            }
+            st.session_state.carpetas_railway = {k: "" for k in _keys_carpetas}
 
 if EN_RAILWAY:
     _c = st.session_state.carpetas_railway
@@ -216,8 +222,7 @@ with st.sidebar:
         if EN_RAILWAY:
             limpiar_cache()
         st.cache_data.clear()
-        for _k in ["carpetas_railway", "_df_ventas", "_df_compras", "_df_rrhh"]:
-            st.session_state.pop(_k, None)
+        st.session_state.pop("carpetas_railway", None)
         st.rerun()
 
     # Uploader — solo admin en Railway
@@ -285,26 +290,27 @@ def get_flujos():
     df_deudas = cargar_deudas(deudas_bytes)[0]     if deudas_bytes  else pd.DataFrame()
     return df_cobrar, df_deudas
 
-# En Railway: session_state garantiza que "Recargar" descargue datos frescos desde GitHub.
+# En Railway: df_cache_get() usa dict a nivel de módulo — persiste entre sesiones del mismo proceso.
+# Se recarga solo cuando limpiar_cache() fue llamado (botón "Recargar" o subida de archivo).
 # En local: @st.cache_data con los paths como clave (cambian cuando el usuario edita los campos).
 if EN_RAILWAY:
-    if "_df_ventas" not in st.session_state:
+    _dfc = df_cache_get()
+    if not _dfc:
         with st.spinner("Cargando ventas..."):
-            st.session_state._df_ventas  = cargar_ventas([carpeta_ventas_2025, carpeta_ventas_2026])
+            df_cache_set("ventas", cargar_ventas([carpeta_ventas_2025, carpeta_ventas_2026]))
         with st.spinner("Cargando compras..."):
-            st.session_state._df_compras = cargar_compras([carpeta_compras_2025, carpeta_compras_2026])
+            df_cache_set("compras", cargar_compras([carpeta_compras_2025, carpeta_compras_2026]))
         with st.spinner("Cargando RRHH..."):
             _frames_rrhh = []
             for _c_rrhh in [carpeta_rrhh_2025, carpeta_rrhh_2026]:
                 _df_rrhh_tmp = cargar_rrhh(_c_rrhh)
                 if not _df_rrhh_tmp.empty:
                     _frames_rrhh.append(_df_rrhh_tmp)
-            st.session_state._df_rrhh = (
-                pd.concat(_frames_rrhh, ignore_index=True) if _frames_rrhh else pd.DataFrame()
-            )
-    df_ventas  = st.session_state._df_ventas
-    df_compras = st.session_state._df_compras
-    df_rrhh    = st.session_state._df_rrhh
+            df_cache_set("rrhh", pd.concat(_frames_rrhh, ignore_index=True) if _frames_rrhh else pd.DataFrame())
+        _dfc = df_cache_get()
+    df_ventas  = _dfc.get("ventas",  pd.DataFrame())
+    df_compras = _dfc.get("compras", pd.DataFrame())
+    df_rrhh    = _dfc.get("rrhh",    pd.DataFrame())
 else:
     @st.cache_data(show_spinner="Cargando ventas...")
     def _get_ventas_local(c2025, c2026):
