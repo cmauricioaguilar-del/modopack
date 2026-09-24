@@ -49,10 +49,8 @@ if not st.session_state.autenticado:
     [data-testid="stDecoration"], #MainMenu {{ display:none !important; }}
     [data-testid="stStatusWidget"] {{ display: none !important; }}
 
-    /* Suprimir gris de rerun/reconexión */
+    /* Suprimir gris de rerun */
     [data-stale="true"] {{ opacity: 1 !important; transition: none !important; }}
-    .stApp, [data-testid="stAppViewContainer"],
-    [data-testid="stMain"] {{ opacity: 1 !important; }}
 
     /* Fondo blanco total */
     html, body, [data-testid="stAppViewContainer"],
@@ -157,7 +155,7 @@ st.markdown("""
 .stTabs [data-baseweb="tab"] p { font-size: 40px !important; }
 .stRadio label p { font-size: 40px !important; }
 [data-testid="stStatusWidget"] { display: none !important; }
-/* Suprimir el gris de re-ejecución de Streamlit */
+/* Suprimir gris de rerun */
 [data-stale="true"] { opacity: 1 !important; transition: none !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -401,7 +399,7 @@ def grafico_barras_h(df_rank, entidad_col, chart_key, valor_col="monto_neto"):
         height=max(250, len(nombres) * 30),
         margin=dict(t=10, b=10, l=10, r=80),
     )
-    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def tabla_ranking(df_rank, entidad_col, label):
