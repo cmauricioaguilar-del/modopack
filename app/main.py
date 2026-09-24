@@ -151,6 +151,8 @@ st.markdown("""
 .stTabs [data-baseweb="tab"] p { font-size: 40px !important; }
 .stRadio label p { font-size: 40px !important; }
 [data-testid="stStatusWidget"] { display: none !important; }
+/* Suprimir el gris de re-ejecución de Streamlit */
+[data-stale="true"] { opacity: 1 !important; transition: none !important; }
 </style>
 """, unsafe_allow_html=True)
 

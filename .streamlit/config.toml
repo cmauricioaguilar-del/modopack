@@ -3,6 +3,10 @@ headless = true
 enableCORS = false
 enableWebsocketCompression = false
 fileWatcherType = "none"
+scriptHealthCheckEnabled = false
 
 [browser]
 gatherUsageStats = false
+
+[runner]
+fastReruns = false
